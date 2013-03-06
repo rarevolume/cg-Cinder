@@ -2701,13 +2701,13 @@
 				GCC_PREFIX_HEADER = cinder_Prefix.pch;
 				GENERATE_MASTER_OBJECT_FILE = YES;
 				INSTALL_PATH = /usr/local/lib;
-				MACOSX_DEPLOYMENT_TARGET = 10.5;
+				MACOSX_DEPLOYMENT_TARGET = 10.7;
 				ONLY_ACTIVE_ARCH = YES;
 				OTHER_LDFLAGS = (
-					../lib/macosx/libboost_thread.a,
-					../lib/macosx/libboost_date_time.a,
-					../lib/macosx/libboost_filesystem.a,
-					../lib/macosx/libboost_system.a,
+					../boost/lib/macosx/libboost_thread.a,
+					../boost/lib/macosx/libboost_date_time.a,
+					../boost/lib/macosx/libboost_filesystem.a,
+					../boost/lib/macosx/libboost_system.a,
 					"../lib/macosx/libpixman-1.a",
 					../lib/macosx/libpng14.a,
 					../lib/macosx/libcairo.a,
@@ -2737,14 +2737,14 @@
 				GCC_PREFIX_HEADER = cinder_Prefix.pch;
 				GENERATE_MASTER_OBJECT_FILE = YES;
 				INSTALL_PATH = /usr/local/lib;
-				MACOSX_DEPLOYMENT_TARGET = 10.5;
+				MACOSX_DEPLOYMENT_TARGET = 10.7;
 				ONLY_ACTIVE_ARCH = YES;
 				OTHER_CFLAGS = "";
 				OTHER_LDFLAGS = (
-					../lib/macosx/libboost_thread.a,
-					../lib/macosx/libboost_date_time.a,
-					../lib/macosx/libboost_filesystem.a,
-					../lib/macosx/libboost_system.a,
+					../boost/lib/macosx/libboost_thread.a,
+					../boost/lib/macosx/libboost_date_time.a,
+					../boost/lib/macosx/libboost_filesystem.a,
+					../boost/lib/macosx/libboost_system.a,
 					"../lib/macosx/libpixman-1.a",
 					../lib/macosx/libpng14.a,
 					../lib/macosx/libcairo.a,
