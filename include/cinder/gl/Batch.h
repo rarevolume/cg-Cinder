@@ -42,11 +42,13 @@ class Batch {
 	typedef std::map<geom::Attrib,std::string> AttributeMapping;
 
 	//! Builds a Batch from a VboMesh and a GlslProg. Attributes defined in \a attributeMapping override the default mapping
+	static BatchRef		create( const gl::GlslProgRef &glsl, const AttributeMapping &attributeMapping );
 	static BatchRef		create( const VboMeshRef &vboMesh, const gl::GlslProgRef &glsl, const AttributeMapping &attributeMapping = AttributeMapping() );
 	static BatchRef		create( const geom::Source &source, const gl::GlslProgRef &glsl );
 	static BatchRef		create( const geom::SourceRef &sourceRef, const gl::GlslProgRef &glsl );
 	
 	void			draw();
+	void			draw( const VboMeshRef &vboMesh );
 #if ! defined( CINDER_GL_ES )
 	void			drawInstanced( GLsizei primcount );
 #endif
@@ -71,6 +73,7 @@ class Batch {
 	void			reassignContext( Context *context );
 
   protected:
+	Batch( const gl::GlslProgRef &glsl, const AttributeMapping &attributeMapping );
 	Batch( const VboMeshRef &vboMesh, const gl::GlslProgRef &glsl, const AttributeMapping &attributeMapping );
 	Batch( const geom::Source &source, const gl::GlslProgRef &glsl );
 

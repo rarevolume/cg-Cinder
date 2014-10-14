@@ -85,6 +85,11 @@ void BatchGeomTarget::copyIndices( geom::Primitive primitive, const uint32_t *so
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // Batch
+BatchRef Batch::create( const gl::GlslProgRef &glsl, const AttributeMapping &attributeMapping )
+{
+	return BatchRef( new Batch( glsl, attributeMapping ) );
+}
+	
 BatchRef Batch::create( const VboMeshRef &vboMesh, const gl::GlslProgRef &glsl, const AttributeMapping &attributeMapping )
 {
 	return BatchRef( new Batch( vboMesh, glsl, attributeMapping ) );
@@ -98,6 +103,12 @@ BatchRef Batch::create( const geom::Source &source, const gl::GlslProgRef &glsl 
 BatchRef Batch::create( const geom::SourceRef &sourceRef, const gl::GlslProgRef &glsl )
 {
 	return BatchRef( new Batch( *sourceRef, glsl ) );
+}
+	
+Batch::Batch( const gl::GlslProgRef &glsl, const AttributeMapping &attributeMapping )
+	: mGlsl( glsl )
+{
+//	mVertexArrayVbos
 }
 
 Batch::Batch( const VboMeshRef &vboMesh, const gl::GlslProgRef &glsl, const AttributeMapping &attributeMapping )
@@ -199,6 +210,39 @@ void Batch::setGlslProg( const GlslProgRef& glsl )
 {
 	mGlsl = glsl;
 	initVao( mAttribMapping );
+}
+	
+void Batch::draw()
+{
+	auto ctx = gl::context();
+	
+	gl::ScopedGlslProg ScopedGlslProg( mGlsl );
+	gl::ScopedVao ScopedVao( mVao );
+	ctx->setDefaultShaderVars();
+	if( mNumIndices )
+		ctx->drawElements( mPrimitive, mNumIndices, mIndexType, 0 );
+	else
+		ctx->drawArrays( mPrimitive, 0, mNumVertices );
+}
+	
+void Batch::draw( const VboMeshRef &vboMesh )
+{
+	auto ctx = gl::context();
+	
+	mIndices = vboMesh->getIndexVbo();
+	mPrimitive = vboMesh->getGlPrimitive();
+	mNumVertices = vboMesh->getNumVertices();
+	mNumIndices = vboMesh->getNumIndices();
+	mIndexType = vboMesh->getIndexDataType();
+	
+	gl::ScopedGlslProg ScopedGlslProg( mGlsl );
+	gl::ScopedVao ScopedVao( mVao );
+	ctx->setDefaultShaderVars();
+	
+	if( mNumIndices )
+		ctx->drawElements( mPrimitive, mNumIndices, mIndexType, 0 );
+	else
+		ctx->drawArrays( mPrimitive, 0, mNumVertices );
 }
 
 void Batch::draw()
