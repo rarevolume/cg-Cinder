@@ -13,6 +13,3 @@
 [submodule "blocks/Cinder-GTest"]
 	path = blocks/Cinder-GTest
 	url = git@github.com:calebjohnston/Cinder-GTest.git
-[submodule "blocks/CinderFX"]
-	path = blocks/CinderFX
-	url = git@github.com:chaoticbob/CinderFx.git
