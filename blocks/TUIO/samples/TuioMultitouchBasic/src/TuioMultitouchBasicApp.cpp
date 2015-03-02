@@ -36,7 +36,7 @@ struct TouchPoint {
 	
 	bool isDead() const { return getElapsedSeconds() > mTimeOfDeath; }
 	
-	PolyLine<vec2>	mLine;
+	PolyLineT<vec2>	mLine;
 	Color			mColor;
 	float			mTimeOfDeath;
 };
