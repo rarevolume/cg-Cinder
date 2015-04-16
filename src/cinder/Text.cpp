@@ -685,6 +685,7 @@ Surface	TextBox::render( vec2 offset )
 	ip::fill( &result, mBackgroundColor );
 	::CGContextRef cgContext = cocoa::createCgBitmapContext( result );
 	::CGContextSetTextMatrix( cgContext, CGAffineTransformIdentity );
+	::CGContextSetShouldAntialias( cgContext, mAntialiased );
 	
 	for( vector<pair<shared_ptr<const __CTLine>,vec2> >::const_iterator lineIt = mLines.begin(); lineIt != mLines.end(); ++lineIt ) {
 		::CGContextSetTextPosition( cgContext, lineIt->second.x + offset.x, sizeY - lineIt->second.y + offset.y );

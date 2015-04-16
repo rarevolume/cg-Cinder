@@ -92,7 +92,7 @@ class TextBox {
 	typedef enum Alignment { LEFT, CENTER, RIGHT } Alignment;
 	enum { GROW = 0 };
 	
-	TextBox() : mAlign( LEFT ), mSize( GROW, GROW ), mFont( Font::getDefault() ), mInvalid( true ), mColor( 1, 1, 1, 1 ), mBackgroundColor( 0, 0, 0, 0 ), mPremultiplied( false ), mLigate( true ) {}
+	TextBox() : mAlign( LEFT ), mSize( GROW, GROW ), mFont( Font::getDefault() ), mInvalid( true ), mColor( 1, 1, 1, 1 ), mBackgroundColor( 0, 0, 0, 0 ), mPremultiplied( false ), mLigate( true ), mAntialiased( true ) {}
 
 	TextBox&			size( ivec2 sz ) { setSize( sz ); return *this; }
 	TextBox&			size( int width, int height ) { setSize( ivec2( width, height ) ); return *this; }
@@ -123,6 +123,10 @@ class TextBox {
 	TextBox&			premultiplied( bool premult = true ) { setPremultiplied( premult ); return *this; }
 	bool				getPremultiplied() const { return mPremultiplied; }
 	void				setPremultiplied( bool premult ) { mPremultiplied = premult; }
+	
+	TextBox&			antialias( bool antialias = true ) { setAntialias( antialias ); return *this; }
+	bool				getAntialias() const { return mAntialiased; }
+	void				setAntialias( bool antialias ) { mAntialiased = antialias; }
 
 	TextBox&			ligate( bool ligateText = true ) { setLigate( ligateText ); return *this; }
 	bool				getLigate() const { return mLigate; }
@@ -143,6 +147,7 @@ class TextBox {
 	ColorA			mColor, mBackgroundColor;
 	bool			mPremultiplied;
 	bool			mLigate;
+	bool			mAntialiased;
 	mutable bool	mInvalid;
 
 	mutable vec2	mCalculatedSize;
