@@ -46,19 +46,13 @@
  */
 
 
-#include "cinder/app/AppNative.h"
+#include "cinder/app/App.h"
 #include "cinder/app/RendererGl.h"
 #include "cinder/params/Params.h"
 #include "cinder/gl/gl.h"
-#include "cinder/gl/VboMesh.h"
-#include "cinder/gl/Fbo.h"
-#include "cinder/gl/Context.h"
-#include "cinder/gl/GlslProg.h"
 #include "cinder/GeomIo.h"
-#include "cinder/gl/Shader.h"
-#include "cinder/gl/Batch.h"
 #include "cinder/Rand.h"
-#include "cinder/MayaCamUI.h"
+#include "cinder/CameraUi.h"
 #include "cinder/Log.h"
 #include "cinder/Color.h"
 
@@ -112,25 +106,20 @@ struct LightData {
 	vec3						target;
 };
 
-class ShadowMappingApp : public AppNative {
-public:
-	void prepareSettings( AppBasic::Settings *settings ) override;
+class ShadowMappingApp : public App {
+  public:
 	void setup() override;
-	void resize() override;
 	void update() override;
 	void draw() override;
 	
-	void mouseMove( MouseEvent event ) override;
-	void mouseDown( MouseEvent event ) override;
-	void mouseDrag( MouseEvent event ) override;
 	void keyDown( KeyEvent event ) override;
-private:
+  private:
 	void drawScene( float spinAngle, const gl::GlslProgRef& glsl = nullptr );
 	params::InterfaceGlRef		mParams;
 	
 	float						mFrameRate;
-	MayaCamUI					mMayaCam;
-	ivec2						mMousePos;
+	CameraPersp					mCamera;
+	CameraUi					mCamUi;
 	
 	gl::BatchRef				mTeapot, mTeapotShadowed;
 	gl::BatchRef				mSphere, mSphereShadowed;
@@ -152,12 +141,6 @@ private:
 	int							mNumRandomSamples;
 	float						mPolygonOffsetFactor, mPolygonOffsetUnits;
 };
-
-void ShadowMappingApp::prepareSettings( AppBasic::Settings *settings )
-{
-//	settings->enableHighDensityDisplay();
-	settings->setWindowSize( 900, 900 );
-}
 
 void ShadowMappingApp::setup()
 {
@@ -236,14 +219,10 @@ void ShadowMappingApp::setup()
 	
 	gl::enableDepthRead();
 	gl::enableDepthWrite();
-}
 
-void ShadowMappingApp::resize()
-{
-	CameraPersp cam = mMayaCam.getCamera();
-	cam.setFov( 30.0f );
-	cam.setAspectRatio( getWindowAspectRatio() );
-	mMayaCam.setCurrentCam( cam );
+	mCamera.setFov( 30.0f );
+	mCamera.setAspectRatio( getWindowAspectRatio() );
+	mCamUi = CameraUi( &mCamera, getWindow() );
 }
 
 void ShadowMappingApp::update()
@@ -314,7 +293,7 @@ void ShadowMappingApp::draw()
 	}
 
 	// Render shadowed scene
-	gl::setMatrices( mLight.toggleViewpoint ? mLight.camera : mMayaCam.getCamera() );
+	gl::setMatrices( mLight.toggleViewpoint ? mLight.camera : mCamera );
 	gl::viewport( toPixels( getWindowSize() ) );
 	{
 		gl::ScopedGlslProg bind( mShadowShader );
@@ -341,27 +320,6 @@ void ShadowMappingApp::draw()
 	mParams->draw();
 }
 
-void ShadowMappingApp::mouseDown( MouseEvent event )
-{
-	mMousePos = event.getPos();
-	mMayaCam.mouseDown( mMousePos );
-}
-
-void ShadowMappingApp::mouseMove( MouseEvent event )
-{
-	mMousePos = event.getPos();
-}
-
-void ShadowMappingApp::mouseDrag( MouseEvent event )
-{
-	mMousePos = event.getPos();
-	
-	// Added/hacked support for international mac laptop keyboards.
-	bool middle = event.isMiddleDown() || ( event.isMetaDown() && event.isLeftDown() );
-	bool right = event.isRightDown() || ( event.isControlDown() && event.isLeftDown() );
-	mMayaCam.mouseDrag( event.getPos(), event.isLeftDown() && !middle && !right, middle, right );
-}
-
 void ShadowMappingApp::keyDown( KeyEvent event )
 {
 	if( event.getChar() == 'f' ) {
@@ -372,4 +330,7 @@ void ShadowMappingApp::keyDown( KeyEvent event )
 	}
 }
 
-CINDER_APP_NATIVE( ShadowMappingApp, RendererGl )
+CINDER_APP( ShadowMappingApp, RendererGl, []( App::Settings *settings ) {
+//	settings->enableHighDensityDisplay();
+	settings->setWindowSize( 900, 900 );
+} )

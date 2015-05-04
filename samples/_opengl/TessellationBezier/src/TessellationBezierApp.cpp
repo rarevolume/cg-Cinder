@@ -1,8 +1,6 @@
-#include "cinder/app/AppNative.h"
+#include "cinder/app/App.h"
 #include "cinder/app/RendererGl.h"
-#include "cinder/gl/Batch.h"
-#include "cinder/gl/GlslProg.h"
-#include "cinder/gl/VboMesh.h"
+#include "cinder/gl/gl.h"
 
 using namespace ci;
 using namespace ci::app;
@@ -11,7 +9,7 @@ using namespace std;
 const int NUM_POINTS = 4; // can't be changed
 const int SUBDIVISIONS = 30; // can be
 
-class TessellationBezierApp : public AppNative {
+class TessellationBezierApp : public App {
   public:
 	void setup() override;
 	void mouseDown( MouseEvent event ) override;
@@ -88,4 +86,4 @@ void TessellationBezierApp::draw()
 	}
 }
 
-CINDER_APP_NATIVE( TessellationBezierApp, RendererGl( RendererGl::Options().version( 4, 0 ) ) )
+CINDER_APP( TessellationBezierApp, RendererGl( RendererGl::Options().version( 4, 0 ) ) )

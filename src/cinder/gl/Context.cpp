@@ -21,7 +21,6 @@
 */
 
 #include "cinder/gl/Context.h"
-#include "cinder/gl/gl.h"
 #include "cinder/gl/Environment.h"
 #include "cinder/gl/GlslProg.h"
 #include "cinder/gl/Shader.h"
@@ -30,11 +29,16 @@
 #include "cinder/gl/TransformFeedbackObj.h"
 #include "cinder/gl/Fbo.h"
 #include "cinder/gl/Batch.h"
-#include "cinder/gl/ConstantStrings.h"
+#include "cinder/gl/ConstantConversions.h"
+#include "cinder/gl/scoped.h"
 #include "cinder/Log.h"
 #include "cinder/Utilities.h"
 
-#include "cinder/app/App.h"
+#include "cinder/app/AppBase.h"
+
+#if defined( CINDER_MSW )
+	#include <Windows.h>
+#endif
 
 using namespace std;
 
@@ -80,7 +84,7 @@ Context::Context( const std::shared_ptr<PlatformData> &platformData )
 	// setup default VAO
 #if defined( SUPPORTS_FBO_MULTISAMPLING )
 	mDefaultVao = Vao::create();
-	mVaoStack.push_back( mDefaultVao );
+	mVaoStack.push_back( mDefaultVao.get() );
 	mDefaultVao->setContext( this );
 	mDefaultVao->bindImpl( NULL );
 
@@ -102,12 +106,21 @@ Context::Context( const std::shared_ptr<PlatformData> &platformData )
 	// initial state for depth mask is enabled
 	mBoolStateStack[GL_DEPTH_WRITEMASK] = vector<GLboolean>();
 	mBoolStateStack[GL_DEPTH_WRITEMASK].push_back( GL_TRUE );
+	
+	// initial state for depth test is disabled
+	mBoolStateStack[GL_DEPTH_TEST] = vector<GLboolean>();
+	mBoolStateStack[GL_DEPTH_TEST].push_back( GL_FALSE );
+	
+	// push default depth function
+	pushDepthFunc();
+	
 	mActiveTextureStack.push_back( 0 );
 
 #if ! defined( CINDER_GL_ES )
 	// initial state for polygonMode is GL_FILL
 	mPolygonModeStack.push_back( GL_FILL );
 #endif
+	
 
 	mImmediateMode = gl::VertBatch::create();
 	
@@ -131,7 +144,7 @@ Context::Context( const std::shared_ptr<PlatformData> &platformData )
     mModelMatrixStack.push_back( mat4() );
     mViewMatrixStack.push_back( mat4() );
 	mProjectionMatrixStack.push_back( mat4() );
-	mGlslProgStack.push_back( GlslProgRef() );
+	mGlslProgStack.push_back( nullptr );
 
 	// set default shader
 	pushGlslProg( getStockShader( ShaderDef().color() ) );
@@ -180,19 +193,19 @@ ContextRef Context::createFromExisting( const std::shared_ptr<PlatformData> &pla
 	return result;
 }
 
-void Context::makeCurrent() const
+void Context::makeCurrent( bool force ) const
 {
 #if defined( CINDER_COCOA )
 	if( ! sThreadSpecificCurrentContextInitialized ) {
 		pthread_key_create( &sThreadSpecificCurrentContextKey, NULL );
 		sThreadSpecificCurrentContextInitialized = true;
 	}
-	if( pthread_getspecific( sThreadSpecificCurrentContextKey ) != this ) {
-	pthread_setspecific( sThreadSpecificCurrentContextKey, this );
+	if( force || ( pthread_getspecific( sThreadSpecificCurrentContextKey ) != this ) ) {
+		pthread_setspecific( sThreadSpecificCurrentContextKey, this );
 		env()->makeContextCurrent( this );
 	}
 #else
-	if( sThreadSpecificCurrentContext != this ) {
+	if( force || ( sThreadSpecificCurrentContext != this ) ) {
 		sThreadSpecificCurrentContext = const_cast<Context*>( this );
 		env()->makeContextCurrent( this );
 	}
@@ -226,9 +239,9 @@ void Context::reflectCurrent( Context *context )
 
 //////////////////////////////////////////////////////////////////
 // VAO
-void Context::bindVao( const VaoRef &vao )
+void Context::bindVao( Vao *vao )
 {
-	VaoRef prevVao = getVao();
+	Vao *prevVao = getVao();
 	if( setStackState( mVaoStack, vao ) ) {
 		if( prevVao )
 			prevVao->unbindImpl( this );
@@ -237,9 +250,9 @@ void Context::bindVao( const VaoRef &vao )
 	}
 }
 
-void Context::pushVao( const VaoRef &vao )
+void Context::pushVao( Vao *vao )
 {
-	VaoRef prevVao = getVao();
+	Vao *prevVao = getVao();
 	if( pushStackState( mVaoStack, vao ) ) {
 		if( prevVao )
 			prevVao->unbindImpl( this );
@@ -255,7 +268,7 @@ void Context::pushVao()
 
 void Context::popVao()
 {
-	VaoRef prevVao = getVao();
+	Vao *prevVao = getVao();
 
 	if( ! mVaoStack.empty() ) {
 		mVaoStack.pop_back();
@@ -274,12 +287,12 @@ void Context::popVao()
 	}
 }
 
-VaoRef Context::getVao()
+Vao* Context::getVao()
 {
 	if( ! mVaoStack.empty() )
 		return mVaoStack.back();
 	else
-		return VaoRef();
+		return nullptr;
 }
 
 void Context::restoreInvalidatedVao()
@@ -479,7 +492,7 @@ void Context::bindBuffer( GLenum target, GLuint id )
 	if( prevValue != id ) {
 		mBufferBindingStack[target].back() = id;
 		if( target == GL_ARRAY_BUFFER || target == GL_ELEMENT_ARRAY_BUFFER ) {
-			VaoRef vao = getVao();
+			Vao* vao = getVao();
 			if( vao )
 				vao->reflectBindBufferImpl( target, id );
 			else
@@ -509,7 +522,7 @@ void Context::popBufferBinding( GLenum target )
 	cachedIt->second.pop_back();
 	if( ! cachedIt->second.empty() && cachedIt->second.back() != prevValue ) {
 		if( target == GL_ARRAY_BUFFER || target == GL_ELEMENT_ARRAY_BUFFER ) {
-			VaoRef vao = getVao();
+			Vao* vao = getVao();
 			if( vao )
 				vao->reflectBindBufferImpl( target, cachedIt->second.back() );
 			else
@@ -577,7 +590,7 @@ void Context::bufferDeleted( const BufferObj *buffer )
 			mBufferBindingStack[target].back() = 0;
 			// alert the currently bound VAO
 			if( target == GL_ARRAY_BUFFER || target == GL_ELEMENT_ARRAY_BUFFER ) {
-				VaoRef vao = getVao();
+				Vao* vao = getVao();
 				if( vao )
 					vao->reflectBindBufferImpl( target, 0 );
 	}
@@ -765,9 +778,9 @@ void Context::endTransformFeedback()
 
 //////////////////////////////////////////////////////////////////
 // Shader
-void Context::pushGlslProg( const GlslProgRef &prog )
+void Context::pushGlslProg( const GlslProg* prog )
 {
-	GlslProgRef prevGlsl = getGlslProg();
+	const GlslProg* prevGlsl = getGlslProg();
 
 	mGlslProgStack.push_back( prog );
 	if( prog != prevGlsl ) {
@@ -785,7 +798,7 @@ void Context::pushGlslProg()
 
 void Context::popGlslProg( bool forceRestore )
 {
-	GlslProgRef prevGlsl = getGlslProg();
+	const GlslProg* prevGlsl = getGlslProg();
 
 	if( ! mGlslProgStack.empty() ) {
 		mGlslProgStack.pop_back();
@@ -804,7 +817,7 @@ void Context::popGlslProg( bool forceRestore )
 		CI_LOG_E( "GlslProg stack underflow" );
 }
 
-void Context::bindGlslProg( const GlslProgRef &prog )
+void Context::bindGlslProg( const GlslProg *prog )
 {
 	if( mGlslProgStack.empty() || (mGlslProgStack.back() != prog) ) {
 		if( ! mGlslProgStack.empty() )
@@ -816,10 +829,10 @@ void Context::bindGlslProg( const GlslProgRef &prog )
 	}
 }
 
-GlslProgRef Context::getGlslProg()
+const GlslProg* Context::getGlslProg()
 {
 	if( mGlslProgStack.empty() )
-		mGlslProgStack.push_back( GlslProgRef() );
+		mGlslProgStack.push_back( nullptr );
 	
 	return mGlslProgStack.back();
 }
@@ -1378,7 +1391,88 @@ float Context::getLineWidth()
 // DepthMask
 void Context::depthMask( GLboolean enable )
 {
-	setBoolState( GL_DEPTH_WRITEMASK, enable, glDepthMask );
+	if( setStackState( mDepthMaskStack, enable ) ) {
+		glDepthMask( enable );
+	}
+}
+
+void Context::pushDepthMask( GLboolean enable )
+{
+	if( pushStackState( mDepthMaskStack, enable ) ) {
+		glDepthMask( enable );
+	}
+}
+
+void Context::pushDepthMask()
+{
+	mDepthMaskStack.push_back( getDepthMask() );
+}
+
+void Context::popDepthMask( bool forceRestore )
+{
+	if( mDepthMaskStack.empty() )
+		CI_LOG_E( "Depth mask stack underflow" );
+	else if( popStackState( mDepthMaskStack ) || forceRestore )
+		glDepthMask( getDepthMask() );
+}
+
+GLboolean Context::getDepthMask()
+{
+	if( mDepthMaskStack.empty() ) {
+		GLint queriedInt;
+		glGetIntegerv( GL_DEPTH_WRITEMASK, &queriedInt );
+		mDepthMaskStack.push_back( queriedInt ); // push twice
+		mDepthMaskStack.push_back( queriedInt );
+	}
+
+	return mDepthMaskStack.back();
+}
+
+//////////////////////////////////////////////////////////////////
+// DepthFunc
+void Context::depthFunc( GLenum func )
+{
+	if( func != GL_NEVER && func != GL_LESS && func != GL_EQUAL && func != GL_LEQUAL && func != GL_GREATER && func != GL_NOTEQUAL && func != GL_GEQUAL && func != GL_ALWAYS )
+		CI_LOG_E( "Wrong enum for the depth buffer comparison function" );
+	
+	if( setStackState( mDepthFuncStack, func ) ) {
+		glDepthFunc( func );
+	}
+}
+
+void Context::pushDepthFunc( GLenum func )
+{
+	if( func != GL_NEVER && func != GL_LESS && func != GL_EQUAL && func != GL_LEQUAL && func != GL_GREATER && func != GL_NOTEQUAL && func != GL_GEQUAL && func != GL_ALWAYS )
+		CI_LOG_E( "Wrong enum for the depth buffer comparison function" );
+	
+	if( pushStackState( mDepthFuncStack, func ) ) {
+		glDepthFunc( func );
+	}
+}
+
+void Context::pushDepthFunc()
+{
+	mDepthFuncStack.push_back( getDepthFunc() );
+}
+
+void Context::popDepthFunc( bool forceRestore )
+{
+	if( mDepthFuncStack.empty() )
+		CI_LOG_E( "Depth function stack underflow" );
+	else if( popStackState( mDepthFuncStack ) || forceRestore )
+		glDepthFunc( getDepthFunc() );
+}
+
+GLenum Context::getDepthFunc()
+{
+	if( mDepthFuncStack.empty() ) {
+		GLint queriedInt;
+		glGetIntegerv( GL_DEPTH_FUNC, &queriedInt );
+		mDepthFuncStack.push_back( queriedInt ); // push twice
+		mDepthFuncStack.push_back( queriedInt );
+	}
+
+	return mDepthFuncStack.back();
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////
@@ -1502,7 +1596,7 @@ void Context::sanityCheck()
 	glGetIntegerv( GL_VERTEX_ARRAY_BINDING, &trueVaoBinding );
 #endif
 
-	VaoRef boundVao = getVao();
+	Vao* boundVao = getVao();
 	if( boundVao ) {
 		CI_ASSERT( trueVaoBinding == boundVao->mId );
 		CI_ASSERT( getBufferBinding( GL_ARRAY_BUFFER ) == boundVao->getLayout().mCachedArrayBufferBinding );
@@ -1600,29 +1694,29 @@ void Context::printState( std::ostream &os ) const
 // Vertex Attributes
 void Context::enableVertexAttribArray( GLuint index )
 {
-	VaoRef vao = getVao();
+	Vao* vao = getVao();
 	if( vao )
 		vao->enableVertexAttribArrayImpl( index );
 }
 
 void Context::disableVertexAttribArray( GLuint index )
 {
-	VaoRef vao = getVao();
+	Vao* vao = getVao();
 	if( vao )
 		vao->disableVertexAttribArrayImpl( index );
 }
 
 void Context::vertexAttribPointer( GLuint index, GLint size, GLenum type, GLboolean normalized, GLsizei stride, const GLvoid *pointer )
 {
-	VaoRef vao = getVao();
+	Vao* vao = getVao();
 	if( vao )
 		vao->vertexAttribPointerImpl( index, size, type, normalized, stride, pointer );
 }
 
-#if ! defined( CINDER_GL_ES )
+#if ! defined( CINDER_GL_ES_2 )
 void Context::vertexAttribIPointer( GLuint index, GLint size, GLenum type, GLsizei stride, const GLvoid *pointer )
 {
-	VaoRef vao = getVao();
+	Vao* vao = getVao();
 	if( vao )
 		vao->vertexAttribIPointerImpl( index, size, type, stride, pointer );
 }
@@ -1630,7 +1724,7 @@ void Context::vertexAttribIPointer( GLuint index, GLint size, GLenum type, GLsiz
 
 void Context::vertexAttribDivisor( GLuint index, GLuint divisor )
 {
-	VaoRef vao = getVao();
+	Vao* vao = getVao();
 	if( vao )
 		vao->vertexAttribDivisorImpl( index, divisor );
 }
@@ -1693,13 +1787,13 @@ void Context::drawElementsInstanced( GLenum mode, GLsizei count, GLenum type, co
 
 ///////////////////////////////////////////////////////////////////////////////////////////
 // Shaders
-GlslProgRef	Context::getStockShader( const ShaderDef &shaderDef )
+GlslProgRef& Context::getStockShader( const ShaderDef &shaderDef )
 {
 	auto existing = mStockShaders.find( shaderDef );
 	if( existing == mStockShaders.end() ) {
 		auto result = gl::env()->buildShader( shaderDef );
 		mStockShaders[shaderDef] = result;
-		return result;
+		return mStockShaders[shaderDef];
 	}
 	else
 		return existing->second;
@@ -1710,51 +1804,105 @@ void Context::setDefaultShaderVars()
 	const auto &ctx = gl::context();
 	const auto &glslProg = ctx->getGlslProg();
 	if( glslProg ) {
-		const auto &uniforms = glslProg->getUniformSemantics();
-		for( const auto &unifIt : uniforms ) {
-			switch( unifIt.second ) {
-				case UNIFORM_MODEL_MATRIX:
-					glslProg->uniform( unifIt.first, gl::getModelMatrix() ); break;
-				case UNIFORM_MODEL_MATRIX_INVERSE:
-					glslProg->uniform( unifIt.first, glm::inverse( gl::getModelMatrix() ) ); break;
-				case UNIFORM_MODEL_MATRIX_INVERSE_TRANSPOSE:
-					glslProg->uniform( unifIt.first, gl::calcModelMatrixInverseTranspose() ); break;
-				case UNIFORM_VIEW_MATRIX:
-					glslProg->uniform( unifIt.first, gl::getViewMatrix() ); break;
-				case UNIFORM_VIEW_MATRIX_INVERSE:
-					glslProg->uniform( unifIt.first, gl::calcViewMatrixInverse() ); break;
-				case UNIFORM_MODEL_VIEW:
-					glslProg->uniform( unifIt.first, gl::getModelView() ); break;
-				case UNIFORM_MODEL_VIEW_INVERSE:
-					glslProg->uniform( unifIt.first, glm::inverse( gl::getModelView() ) ); break;
-				case UNIFORM_MODEL_VIEW_INVERSE_TRANSPOSE:
-					glslProg->uniform( unifIt.first, gl::calcNormalMatrix() ); break;
-				case UNIFORM_MODEL_VIEW_PROJECTION:
-					glslProg->uniform( unifIt.first, gl::getModelViewProjection() ); break;
-				case UNIFORM_MODEL_VIEW_PROJECTION_INVERSE:
-					glslProg->uniform( unifIt.first, glm::inverse( gl::getModelViewProjection() ) ); break;
-				case UNIFORM_PROJECTION_MATRIX:
-					glslProg->uniform( unifIt.first, gl::getProjectionMatrix() ); break;
-				case UNIFORM_PROJECTION_MATRIX_INVERSE:
-					glslProg->uniform( unifIt.first, glm::inverse( gl::getProjectionMatrix() ) ); break;
-				case UNIFORM_NORMAL_MATRIX:
-					glslProg->uniform( unifIt.first, gl::calcNormalMatrix() ); break;
-				case UNIFORM_VIEWPORT_MATRIX:
-					glslProg->uniform( unifIt.first, gl::calcViewportMatrix() ); break;
-				case UNIFORM_WINDOW_SIZE:
-					glslProg->uniform( unifIt.first, app::getWindowSize() ); break;
-				case UNIFORM_ELAPSED_SECONDS:
-					glslProg->uniform( unifIt.first, float( app::getElapsedSeconds() ) ); break;
+		const auto &uniforms = glslProg->getActiveUniforms();
+		for( const auto &uniform : uniforms ) {
+			switch( uniform.getUniformSemantic() ) {
+				case UNIFORM_MODEL_MATRIX: {
+					auto model = gl::getModelMatrix();
+					glslProg->uniform( uniform.getLocation(), model );
+				}
+				break;
+				case UNIFORM_MODEL_MATRIX_INVERSE: {
+					auto inverseModel = glm::inverse( gl::getModelMatrix() );
+					glslProg->uniform( uniform.getLocation(), inverseModel );
+				}
+				break;
+				case UNIFORM_MODEL_MATRIX_INVERSE_TRANSPOSE: {
+					auto modelInverseTranspose = gl::calcModelMatrixInverseTranspose();
+					glslProg->uniform( uniform.getLocation(), modelInverseTranspose );
+				}
+				break;
+				case UNIFORM_VIEW_MATRIX: {
+					auto view = gl::getViewMatrix();
+					glslProg->uniform( uniform.getLocation(), view );
+				}
+				break;
+				case UNIFORM_VIEW_MATRIX_INVERSE: {
+					auto viewInverse = gl::calcViewMatrixInverse();
+					glslProg->uniform( uniform.getLocation(), viewInverse );
+				}
+				break;
+				case UNIFORM_MODEL_VIEW: {
+					auto modelView = gl::getModelView();
+					glslProg->uniform( uniform.getLocation(), modelView );
+				}
+				break;
+				case UNIFORM_MODEL_VIEW_INVERSE: {
+					auto modelViewInverse = glm::inverse( gl::getModelView() );
+					glslProg->uniform( uniform.getLocation(), modelViewInverse );
+				}
+				break;
+				case UNIFORM_MODEL_VIEW_INVERSE_TRANSPOSE: {
+					auto normalMatrix = gl::calcNormalMatrix();
+					glslProg->uniform( uniform.getLocation(), normalMatrix );
+				}
+				break;
+				case UNIFORM_MODEL_VIEW_PROJECTION: {
+					auto modelViewProjection = gl::getModelViewProjection();
+					glslProg->uniform( uniform.getLocation(), modelViewProjection );
+				}
+				break;
+				case UNIFORM_MODEL_VIEW_PROJECTION_INVERSE: {
+					auto modelViewProjectionInverse = glm::inverse( gl::getModelViewProjection() );
+					glslProg->uniform( uniform.getLocation(), modelViewProjectionInverse );
+				}
+				break;
+				case UNIFORM_PROJECTION_MATRIX: {
+					auto projection = gl::getProjectionMatrix();
+					glslProg->uniform( uniform.getLocation(), projection );
+				}
+				break;
+				case UNIFORM_PROJECTION_MATRIX_INVERSE: {
+					auto projectionInverse = glm::inverse( gl::getProjectionMatrix() );
+					glslProg->uniform( uniform.getLocation(), projectionInverse );
+				}
+				break;
+				case UNIFORM_VIEW_PROJECTION: {
+					auto viewProjection = gl::getProjectionMatrix() * gl::getViewMatrix();
+					glslProg->uniform( uniform.getLocation(), viewProjection );
+				}
+				break;
+				case UNIFORM_NORMAL_MATRIX: {
+					auto normalMatrix = gl::calcNormalMatrix();
+					glslProg->uniform( uniform.getLocation(), normalMatrix );
+				}
+				break;
+				case UNIFORM_VIEWPORT_MATRIX: {
+					auto viewport = gl::calcViewportMatrix();
+					glslProg->uniform( uniform.getLocation(), viewport );
+				}
+				break;
+				case UNIFORM_WINDOW_SIZE: {
+					auto windowSize = app::getWindowSize();
+					glslProg->uniform( uniform.getLocation(), windowSize );
+				}
+				break;
+				case UNIFORM_ELAPSED_SECONDS: {
+					auto elapsed = float( app::getElapsedSeconds() );
+					glslProg->uniform( uniform.getLocation(), elapsed );
+				break;
+				}
+				default:
+					;
 			}
 		}
 
-		const auto &attribs = glslProg->getAttribSemantics();
-		for( const auto &attribIt : attribs ) {
-			switch( attribIt.second ) {
+		const auto &attribs = glslProg->getActiveAttributes();
+		for( const auto &attrib : attribs ) {
+			switch( attrib.getAttributeSemantic() ) {
 				case geom::Attrib::COLOR: {
-					int loc = glslProg->getAttribLocation( attribIt.first );
 					ColorA c = ctx->getCurrentColor();
-					gl::vertexAttrib4f( loc, c.r, c.g, c.b, c.a );
+					gl::vertexAttrib4f( attrib.getLocation(), c.r, c.g, c.b, c.a );
 				}
 				break;
 				default:
@@ -1764,13 +1912,13 @@ void Context::setDefaultShaderVars()
 	}
 }
 
-VaoRef Context::getDefaultVao()
+Vao* Context::getDefaultVao()
 {
 	if( ! mDefaultVao ) {
 		mDefaultVao = Vao::create();
 	}
 
-	return mDefaultVao;
+	return mDefaultVao.get();
 }
 
 VboRef Context::getDrawTextureVbo()
@@ -1782,13 +1930,13 @@ VboRef Context::getDrawTextureVbo()
 	return mDrawTextureVbo;
 }
 
-VaoRef Context::getDrawTextureVao()
+Vao* Context::getDrawTextureVao()
 {
 	if( ! mDrawTextureVao ) {
 		allocateDrawTextureVboAndVao();
 	}
 
-	return mDrawTextureVao;
+	return mDrawTextureVao.get();
 }
 
 void Context::allocateDrawTextureVboAndVao()
@@ -1821,12 +1969,12 @@ void Context::allocateDrawTextureVboAndVao()
 
 VboRef Context::getDefaultArrayVbo( size_t requiredSize )
 {
-	mDefaultArrayVboIdx = ( mDefaultArrayVboIdx + 1 ) % 4;
+	mDefaultArrayVboIdx = 0;//( mDefaultArrayVboIdx + 1 ) % 4;
 
 	if( ! mDefaultArrayVbo[mDefaultArrayVboIdx] ) {
 		mDefaultArrayVbo[mDefaultArrayVboIdx] = Vbo::create( GL_ARRAY_BUFFER, std::max<size_t>( 1, requiredSize ), NULL, GL_STREAM_DRAW );
 	}
-	else if( requiredSize > mDefaultArrayVbo[mDefaultArrayVboIdx]->getSize() ) {
+	else {
 		mDefaultArrayVbo[mDefaultArrayVboIdx]->ensureMinimumSize( std::max<size_t>( 1, requiredSize ) );
 	}
 
@@ -1835,11 +1983,11 @@ VboRef Context::getDefaultArrayVbo( size_t requiredSize )
 
 VboRef Context::getDefaultElementVbo( size_t requiredSize )
 {
-	if( ! mDefaultElementVbo ) {
+	if( ! mDefaultElementVbo || ( requiredSize > mDefaultElementVbo->getSize() ) ) {
 		mDefaultElementVbo = Vbo::create( GL_ELEMENT_ARRAY_BUFFER, requiredSize, NULL, GL_STREAM_DRAW );
 	}
-	if( requiredSize > mDefaultElementVbo->getSize() ) {
-		mDefaultElementVbo = Vbo::create( GL_ELEMENT_ARRAY_BUFFER, requiredSize, NULL, GL_STREAM_DRAW );
+	else {
+		mDefaultElementVbo->ensureMinimumSize( std::max<size_t>( 1, requiredSize ) );
 	}
 	
 	return mDefaultElementVbo;

@@ -42,7 +42,7 @@
 #include "cinder/gl/Vbo.h"
 #include "cinder/gl/Context.h"
 #include "cinder/gl/Environment.h"
-#include "cinder/gl/ConstantStrings.h"
+#include "cinder/gl/ConstantConversions.h"
 
 #include <set>
 
@@ -97,7 +97,7 @@ void Vao::setContext( Context *context )
 void Vao::bind()
 {
 	// this will "come back" by calling bindImpl if it's necessary
-	mCtx->bindVao( shared_from_this() );
+	mCtx->bindVao( this );
 }
 
 void Vao::unbind() const

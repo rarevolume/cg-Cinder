@@ -8,17 +8,10 @@
 //	License: BSD Simplified
 //
 
-#include "cinder/app/AppNative.h"
+#include "cinder/app/App.h"
 #include "cinder/app/RendererGl.h"
-
 #include "cinder/Rand.h"
-
 #include "cinder/gl/gl.h"
-#include "cinder/gl/Context.h"
-#include "cinder/gl/Shader.h"
-#include "cinder/gl/Vbo.h"
-#include "cinder/gl/Vao.h"
-#include "cinder/gl/GlslProg.h"
 
 using namespace ci;
 using namespace ci::app;
@@ -51,9 +44,8 @@ const int NUM_PARTICLES = 600e3;
 	particleUpdate.vs defines the simulation update step.
 	Designed to have the same behavior as ParticleSphereCPU.
  */
-class ParticleSphereGPUApp : public AppNative {
+class ParticleSphereGPUApp : public App {
   public:
-	void prepareSettings( Settings *settings ) override;
 	void setup() override;
 	void update() override;
 	void draw() override;
@@ -77,14 +69,6 @@ class ParticleSphereGPUApp : public AppNative {
 	vec3			mMousePos = vec3( 0, 0, 0 );
 };
 
-void ParticleSphereGPUApp::prepareSettings( Settings *settings )
-{
-#if ! defined( CINDER_GL_ES )
-	settings->setWindowSize( 1280, 720 );
-#endif
-	settings->enableMultiTouch( false );
-}
-
 void ParticleSphereGPUApp::setup()
 {
 	// Create initial particle layout.
@@ -99,7 +83,7 @@ void ParticleSphereGPUApp::setup()
 		float x = radius * sin( inclination * i ) * cos( azimuth * i );
 		float y = radius * cos( inclination * i );
 		float z = radius * sin( inclination * i ) * sin( azimuth * i );
-
+		
 		auto &p = particles.at( i );
 		p.pos = center + vec3( x, y, z );
 		p.home = p.pos;
@@ -107,20 +91,20 @@ void ParticleSphereGPUApp::setup()
 		p.damping = Rand::randFloat( 0.965f, 0.985f );
 		p.color = Color( CM_HSV, lmap<float>( i, 0.0f, particles.size(), 0.0f, 0.66f ), 1.0f, 1.0f );
 	}
-
+	
 	// Create particle buffers on GPU and copy data into the first buffer.
 	// Mark as static since we only write from the CPU once.
 	mParticleBuffer[mSourceIndex] = gl::Vbo::create( GL_ARRAY_BUFFER, particles.size() * sizeof(Particle), particles.data(), GL_STATIC_DRAW );
 	mParticleBuffer[mDestinationIndex] = gl::Vbo::create( GL_ARRAY_BUFFER, particles.size() * sizeof(Particle), nullptr, GL_STATIC_DRAW );
-
+	
 	// Create a default color shader.
 	mRenderProg = gl::getStockShader( gl::ShaderDef().color() );
-
+	
 	for( int i = 0; i < 2; ++i )
 	{	// Describe the particle layout for OpenGL.
 		mAttributes[i] = gl::Vao::create();
 		gl::ScopedVao vao( mAttributes[i] );
-
+		
 		// Define attributes as offsets into the bound particle buffer
 		gl::ScopedBuffer buffer( mParticleBuffer[i] );
 		gl::enableVertexAttribArray( 0 );
@@ -134,24 +118,24 @@ void ParticleSphereGPUApp::setup()
 		gl::vertexAttribPointer( 3, 3, GL_FLOAT, GL_FALSE, sizeof(Particle), (const GLvoid*)offsetof(Particle, home) );
 		gl::vertexAttribPointer( 4, 1, GL_FLOAT, GL_FALSE, sizeof(Particle), (const GLvoid*)offsetof(Particle, damping) );
 	}
-
+	
 	// Load our update program.
 	// Match up our attribute locations with the description we gave.
-
+	
 #if defined( CINDER_GL_ES_3 )
 	mUpdateProg = gl::GlslProg::create( gl::GlslProg::Format().vertex( loadAsset( "particleUpdate_es3.vs" ) )
-		.fragment( loadAsset( "no_op_es3.fs" ) )
+									   .fragment( loadAsset( "no_op_es3.fs" ) )
 #else
 	mUpdateProg = gl::GlslProg::create( gl::GlslProg::Format().vertex( loadAsset( "particleUpdate.vs" ) )
 #endif
-		.feedbackFormat( GL_INTERLEAVED_ATTRIBS )
-		.feedbackVaryings( { "position", "pposition", "home", "color", "damping" } )
-		.attribLocation( "iPosition", 0 )
-		.attribLocation( "iColor", 1 )
-		.attribLocation( "iPPosition", 2 )
-		.attribLocation( "iHome", 3 )
-		.attribLocation( "iDamping", 4 )
-									   );
+			.feedbackFormat( GL_INTERLEAVED_ATTRIBS )
+			.feedbackVaryings( { "position", "pposition", "home", "color", "damping" } )
+			.attribLocation( "iPosition", 0 )
+			.attribLocation( "iColor", 1 )
+			.attribLocation( "iPPosition", 2 )
+			.attribLocation( "iHome", 3 )
+			.attribLocation( "iDamping", 4 )
+			);
 
 	// Listen to mouse events so we can send data as uniforms.
 	getWindow()->getSignalMouseDown().connect( [this]( MouseEvent event )
@@ -212,4 +196,7 @@ void ParticleSphereGPUApp::draw()
 	gl::drawArrays( GL_POINTS, 0, NUM_PARTICLES );
 }
 
-CINDER_APP_NATIVE( ParticleSphereGPUApp, RendererGl )
+CINDER_APP( ParticleSphereGPUApp, RendererGl, [] ( App::Settings *settings ) {
+	settings->setWindowSize( 1280, 720 );
+	settings->setMultiTouchEnabled( false );
+} )

@@ -24,15 +24,16 @@
  POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "cinder/app/AppNative.h"
+#include "cinder/app/App.h"
 #include "cinder/app/RendererGl.h"
+#include "cinder/gl/gl.h"
 
 using namespace ci;
 using namespace ci::app;
 
 #include "OscListener.h"
 
-class OSCListenerApp : public AppNative {
+class OSCListenerApp : public App {
   public:
 	void setup();
 	void update();
@@ -98,4 +99,4 @@ void OSCListenerApp::draw()
 	gl::drawSolidRect( Rectf( vec2(0), vec2(positionX * getWindowWidth(), getWindowHeight())) );
 }
 
-CINDER_APP_NATIVE( OSCListenerApp, RendererGl )
+CINDER_APP( OSCListenerApp, RendererGl )

@@ -20,7 +20,7 @@
  POSSIBILITY OF SUCH DAMAGE.
 */
 
-#include "cinder/app/App.h"
+#include "cinder/app/AppBase.h"
 #include "cinder/params/Params.h"
 #include "cinder/Utilities.h"
 
@@ -28,7 +28,7 @@
 
 #if defined( USE_DIRECTX )
 	#include "cinder/dx/dx.h"
-	#include "cinder/app/AppImplMswRendererDx.h"
+	#include "cinder/app/RendererImplDx.h"
 #else
 	#include "cinder/gl/Environment.h"
 #endif
@@ -143,6 +143,7 @@ void mouseDown( int twWindowId, app::MouseEvent &event )
 
 void mouseUp( int twWindowId, app::MouseEvent &event )
 {
+	auto oldCtx = gl::context();
 	pushGlState();
 	
 	TwSetCurrentWindow( twWindowId );
@@ -155,6 +156,9 @@ void mouseUp( int twWindowId, app::MouseEvent &event )
 	else
 		button = TW_MOUSE_MIDDLE;
 	event.setHandled( TwMouseButton( TW_MOUSE_RELEASED, button ) != 0 );
+	
+	// The button handler may have tweaked the current GL context, in which case, let's force it back to what it was
+	oldCtx->makeCurrent( true );
 	
 	popGlState();
 }
@@ -316,7 +320,7 @@ int initAntGl( weak_ptr<app::Window> winWeak )
 
 InterfaceGl::InterfaceGl( const std::string &title, const ivec2 &size, const ColorA &color )
 {
-	init( app::App::get()->getWindow(), title, size, color );
+	init( app::getWindow(), title, size, color );
 }
 
 InterfaceGl::InterfaceGl( const app::WindowRef &window, const std::string &title, const ivec2 &size, const ColorA &color )
@@ -601,24 +605,58 @@ void InterfaceGl::addParam( const std::string &name, std::string *param, const s
 	implAddParamDeprecated( name, param, TW_TYPE_STDSTRING, optionsStr, readOnly );
 }
 
+// deprecated enum variant
 void InterfaceGl::addParam( const std::string &name, const std::vector<std::string> &enumNames, int *param, const std::string &optionsStr, bool readOnly )
 {
 	TwSetCurrentWindow( mTwWindowId );
-	
-	TwEnumVal *ev = new TwEnumVal[enumNames.size()];
+
+	vector<TwEnumVal> ev( enumNames.size() );
 	for( size_t v = 0; v < enumNames.size(); ++v ) {
 		ev[v].Value = (int)v;
 		ev[v].Label = const_cast<char*>( enumNames[v].c_str() );
 	}
 
-	TwType evType = TwDefineEnum( (name + "EnumType").c_str(), ev, (unsigned int)enumNames.size() );
+	TwType evType = TwDefineEnum( (name + "EnumType").c_str(), ev.data(), (unsigned int)ev.size() );
 
 	if( readOnly )
 		TwAddVarRO( mBar.get(), name.c_str(), evType, param, optionsStr.c_str() );
 	else
 		TwAddVarRW( mBar.get(), name.c_str(), evType, param, optionsStr.c_str() );
-		
-	delete [] ev;
+}
+
+InterfaceGl::Options<int> InterfaceGl::addParam( const std::string &name, const std::vector<std::string> &enumNames, int *param, bool readOnly )
+{
+	TwSetCurrentWindow( mTwWindowId );
+
+	vector<TwEnumVal> ev( enumNames.size() );
+	for( size_t v = 0; v < enumNames.size(); ++v ) {
+		ev[v].Value = (int)v;
+		ev[v].Label = const_cast<char*>( enumNames[v].c_str() );
+	}
+
+	TwType evType = TwDefineEnum( (name + "EnumType").c_str(), ev.data(), (unsigned int)ev.size() );
+
+	if( readOnly )
+		TwAddVarRO( mBar.get(), name.c_str(), evType, param, nullptr );
+	else
+		TwAddVarRW( mBar.get(), name.c_str(), evType, param, nullptr );
+
+	return Options<int>( name, param, evType, this );
+}
+
+InterfaceGl::Options<int> InterfaceGl::addParam( const std::string &name, const std::vector<std::string> &enumNames, const std::function<void ( int )> &setterFn, const std::function<int ()> &getterFn )
+{
+	TwSetCurrentWindow( mTwWindowId );
+
+	vector<TwEnumVal> ev( enumNames.size() );
+	for( size_t v = 0; v < enumNames.size(); ++v ) {
+		ev[v].Value = (int)v;
+		ev[v].Label = const_cast<char*>( enumNames[v].c_str() );
+	}
+
+	TwType evType = TwDefineEnum( (name + "EnumType").c_str(), ev.data(), (unsigned int)ev.size() );
+
+	return Options<int>( name, nullptr, evType, this ).accessors( setterFn, getterFn );
 }
 
 void InterfaceGl::addSeparator( const std::string &name, const std::string &optionsStr )

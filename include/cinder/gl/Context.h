@@ -22,8 +22,8 @@
 
 #pragma once
 
+#include "cinder/gl/platform.h"
 #include "cinder/Camera.h"
-#include "cinder/gl/gl.h"
 #include "cinder/Color.h"
 #include "cinder/Matrix44.h"
 #include "cinder/Vector.h"
@@ -54,6 +54,8 @@ class VertBatch;
 typedef std::shared_ptr<VertBatch>		VertBatchRef;
 class Renderbuffer;
 
+class TextureBase;
+
 class Context {
   public:
 	struct PlatformData {
@@ -76,8 +78,8 @@ class Context {
 	//! Returns the platform-specific OpenGL Context. CGLContextObj on Mac OS X, EAGLContext on iOS
 	const std::shared_ptr<PlatformData>		getPlatformData() const { return mPlatformData; }
 
-	//! Makes this the currently active OpenGL Context
-	void			makeCurrent() const;
+	//! Makes this the currently active OpenGL Context. If \a force then the cached pointer to the current Context is ignored.
+	void			makeCurrent( bool force = false ) const;
 	//! Returns the thread's currently active OpenGL Context
 	static Context*	getCurrent();
 	//! Set thread's local storage to reflect \a context as the active Context
@@ -97,15 +99,19 @@ class Context {
 	const std::vector<mat4>&	getProjectionMatrixStack() const { return mProjectionMatrixStack; }
 	
 	//! Binds a VAO. Consider using a ScopedVao instead.
-	void		bindVao( const VaoRef &vao );
+	void		bindVao( Vao *vao );
+	//! Binds a VAO. Consider using a ScopedVao instead.
+	void		bindVao( VaoRef &vao ) { bindVao( vao.get() ); }
 	//! Pushes and binds the VAO \a vao
-	void		pushVao( const VaoRef &vao );
+	void		pushVao( Vao *vao );
+	//! Pushes and binds the VAO \a vao
+	void		pushVao( const VaoRef &vao ) { pushVao( vao.get() ); }
 	//! Duplicates and pushes the current VAO binding 
 	void		pushVao();
 	//! Pops the current VAO binding
 	void		popVao();
 	//! Returns the currently bound VAO
-	VaoRef		getVao();
+	Vao*		getVao();
 	//! Restores the VAO binding when code that is not caching aware has invalidated it. Not typically necessary.
 	void		restoreInvalidatedVao();
 	//! Used by object tracking.
@@ -192,19 +198,21 @@ class Context {
 	void		renderbufferDeleted( const Renderbuffer *buffer );
 
 	//! Binds GLSL program \a prog. Analogous to glUseProgram()
-	void			bindGlslProg( const GlslProgRef &prog );
+	void				bindGlslProg( const GlslProg* prog );
+	void				bindGlslProg( GlslProgRef& prog ) { bindGlslProg( prog.get() ); }
 	//! Pushes and binds GLSL program \a prog.
-	void			pushGlslProg( const GlslProgRef &prog );
+	void				pushGlslProg( const GlslProg* prog );
+	void				pushGlslProg( GlslProgRef& prog ) { pushGlslProg( prog.get() ); }
 	//! Duplicates and pushes the top of the GlslProg stack.
-	void			pushGlslProg();
+	void				pushGlslProg();
 	//! Pops the GlslProg stack. If \a forceRestore then redundancy checks are skipped and the hardware state is always set.
-	void			popGlslProg( bool forceRestore = false );
+	void				popGlslProg( bool forceRestore = false );
 	//! Returns the currently bound GlslProg
-	GlslProgRef		getGlslProg();
+	const GlslProg*		getGlslProg();
 	//! Used by object tracking.
-	void			glslProgCreated( const GlslProg *glslProg );
+	void				glslProgCreated( const GlslProg *glslProg );
 	//! Used by object tracking.
-	void			glslProgDeleted( const GlslProg *glslProg );
+	void				glslProgDeleted( const GlslProg *glslProg );
 	
 #if ! defined( CINDER_GL_ES_2 )
 	//! Binds \a ref to the specific \a index within \a target. Analogous to glBindBufferBase()
@@ -317,9 +325,28 @@ class Context {
 	void		popLineWidth( bool forceRestore = false );	
 	//! Returns the current line width.
 	float		getLineWidth();
-
-	//! Analogous to glDepthMask()
+	
+	//! Analogous to glDepthMask(). Enables or disables writing into the depth buffer.
 	void		depthMask( GLboolean enable );
+	//! Push the depth buffer writing flag.
+	void		pushDepthMask( GLboolean enable );
+	//! Push the depth buffer writing flag.
+	void		pushDepthMask();
+	//! Pops the depth buffer writing flag. If \a forceRestore then redundancy checks are skipped and the hardware state is always set.
+	void		popDepthMask( bool forceRestore = false );
+	//! Returns the depth buffer writing flag.
+	GLboolean	getDepthMask();
+	
+	//! Set the depth buffer comparison function. Analogous to glDepthFunc(). Valid arguments are \c GL_NEVER, \c GL_LESS, \c GL_EQUAL, \c GL_LEQUAL, \c GL_GREATER, \c GL_NOTEQUAL, \c GL_GEQUAL and \c GL_ALWAYS. Default is \c GL_LESS.
+	void		depthFunc( GLenum func );
+	//! Push the depth buffer comparison function. Valid arguments are \c GL_NEVER, \c GL_LESS, \c GL_EQUAL, \c GL_LEQUAL, \c GL_GREATER, \c GL_NOTEQUAL, \c GL_GEQUAL and \c GL_ALWAYS. Default is \c GL_LESS.
+	void		pushDepthFunc( GLenum func );
+	//! Push the depth buffer comparison function.
+	void		pushDepthFunc();
+	//! Pops the depth buffer comparison function. If \a forceRestore then redundancy checks are skipped and the hardware state is always set.
+	void		popDepthFunc( bool forceRestore = false );
+	//! Returns the depth buffer comparison function, either \c GL_NEVER, \c GL_LESS, \c GL_EQUAL, \c GL_LEQUAL, \c GL_GREATER, \c GL_NOTEQUAL, \c GL_GEQUAL or \c GL_ALWAYS.
+	GLenum		getDepthFunc();
 
 #if ! defined( CINDER_GL_ES )
 	//! Sets the current polygon rasterization mode. \a face must be \c GL_FRONT_AND_BACK. \c GL_POINT, \c GL_LINE & \c GL_FILL are legal values for \a mode.
@@ -356,7 +383,7 @@ class Context {
 	void		disableVertexAttribArray( GLuint index );
 	//! Analogous to glVertexAttribPointer()
 	void		vertexAttribPointer( GLuint index, GLint size, GLenum type, GLboolean normalized, GLsizei stride, const GLvoid *pointer );
-#if ! defined( CINDER_GL_ES )
+#if ! defined( CINDER_GL_ES_2 )
 	//! Analogous to glVertexAttribIPointer()
 	void		vertexAttribIPointer( GLuint index, GLint size, GLenum type, GLsizei stride, const GLvoid *pointer );
 #endif // ! defined( CINDER_GL_ES )
@@ -383,21 +410,21 @@ class Context {
 #endif // (! defined( CINDER_GL_ES_2 )) || defined( CINDER_COCOA_TOUCH )
 
 	//! Returns the current active color, used in immediate-mode emulation and as UNIFORM_COLOR
-	const ColorAf&	getCurrentColor() const { return mColor; }
-	void			setCurrentColor( const ColorAf &color ) { mColor = color; }
-	GlslProgRef		getStockShader( const ShaderDef &shaderDef );
-	void			setDefaultShaderVars();
+	const ColorAf&		getCurrentColor() const { return mColor; }
+	void				setCurrentColor( const ColorAf &color ) { mColor = color; }
+	GlslProgRef&		getStockShader( const ShaderDef &shaderDef );
+	void				setDefaultShaderVars();
 
 	//! Returns default VBO for vertex array data, ensuring it is at least \a requiredSize bytes. Designed for use with convenience functions.
 	VboRef			getDefaultArrayVbo( size_t requiredSize = 0 );
 	//! Returns default VBO for element array data, ensuring it is at least \a requiredSize bytes. Designed for use with convenience functions.
 	VboRef			getDefaultElementVbo( size_t requiredSize = 0 );
 	//! Returns default VAO, designed for use with convenience functions.
-	VaoRef			getDefaultVao();
+	Vao*			getDefaultVao();
 	//! Returns a VBO for drawing textured rectangles; used by gl::draw(TextureRef)
 	VboRef			getDrawTextureVbo();
 	//! Returns a VBO for drawing textured rectangles; used by gl::draw(TextureRef)
-	VaoRef			getDrawTextureVao();
+	Vao*			getDrawTextureVao();
 
 	//! Returns a reference to the immediate mode emulation structure. Generally use gl::begin() and friends instead.
 	VertBatch&		immediate() { return *mImmediateMode; }
@@ -426,8 +453,8 @@ class Context {
 	
 	std::map<GLenum,std::vector<int>>	mBufferBindingStack;
 	std::map<GLenum,std::vector<int>>	mRenderbufferBindingStack;
-	std::vector<GlslProgRef>			mGlslProgStack;
-	std::vector<VaoRef>					mVaoStack;
+	std::vector<const GlslProg*>		mGlslProgStack;
+	std::vector<Vao*>					mVaoStack;
 	
 #if ! defined( CINDER_GL_ES_2 )
 	TransformFeedbackObjRef				mCachedTransformFeedbackObj;
@@ -446,6 +473,8 @@ class Context {
 	std::vector<GLenum>			mCullFaceStack;
 	std::vector<GLenum>			mFrontFaceStack;
 	std::vector<GLenum>			mPolygonModeStack;
+	std::vector<GLboolean>		mDepthMaskStack;
+	std::vector<GLenum>			mDepthFuncStack;
 	
 	std::map<GLenum,std::vector<GLboolean>>	mBoolStateStack;
 	// map<TextureUnit,map<TextureTarget,vector<Binding ID Stack>>>

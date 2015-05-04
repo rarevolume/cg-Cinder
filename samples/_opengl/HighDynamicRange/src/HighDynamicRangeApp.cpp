@@ -1,7 +1,6 @@
-#include "cinder/app/AppNative.h"
+#include "cinder/app/App.h"
 #include "cinder/app/RendererGl.h"
-#include "cinder/gl/GlslProg.h"
-#include "cinder/gl/Texture.h"
+#include "cinder/gl/gl.h"
 
 using namespace ci;
 using namespace ci::app;
@@ -9,9 +8,8 @@ using namespace std;
 
 // output = ((input*exposure) + offset)^(1/gamma)
 
-class HighDynamicRangeApp : public AppNative {
+class HighDynamicRangeApp : public App {
   public:
-	void prepareSettings( Settings *settings ) { settings->enableMultiTouch( false ); }
 	void setup() override;
 	void mouseDrag( MouseEvent event ) override;	
 	void draw() override;
@@ -70,4 +68,6 @@ void HighDynamicRangeApp::draw()
 	gl::drawSolidRect( mHdrTexture->getBounds() );
 }
 
-CINDER_APP_NATIVE( HighDynamicRangeApp, RendererGl( RendererGl::Options() ) )
+CINDER_APP( HighDynamicRangeApp, RendererGl, []( App::Settings *settings ) {
+	settings->setMultiTouchEnabled( false );
+} )

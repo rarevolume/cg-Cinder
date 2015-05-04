@@ -24,21 +24,18 @@ http://www.cgtrader.com/3d-models/character-people/fantasy/the-leprechaun-the-go
  POSSIBILITY OF SUCH DAMAGE.
 */
 
-#include "cinder/app/AppNative.h"
+#include "cinder/app/App.h"
 #include "cinder/app/RendererGl.h"
 #include "cinder/gl/gl.h"
-#include "cinder/gl/GlslProg.h"
-#include "cinder/gl/Shader.h"
-#include "cinder/gl/Texture.h"
-#include "cinder/gl/VboMesh.h"
 #include "cinder/params/Params.h"
 #include "cinder/Camera.h"
 #include "cinder/ImageIo.h"
-#include "cinder/MayaCamUI.h"
+#include "cinder/CameraUi.h"
 #include "cinder/Perlin.h"
 #include "cinder/Timeline.h"
 #include "cinder/Timer.h"
 #include "cinder/TriMesh.h"
+#include "cinder/Log.h"
 
 #include "DebugMesh.h"
 
@@ -53,7 +50,15 @@ struct LightSource
 	ColorA specular;
 };
 
-class NormalMappingApp : public AppNative {
+static void prepareSettings( App::Settings *settings )
+{
+	settings->disableFrameRate();
+
+	settings->setWindowSize( 1024, 768 );
+	settings->setTitle( "OpenGL Core Profile - Normal Mapping Demo" );
+}
+
+class NormalMappingApp : public App {
 
 #if ! defined( CINDER_GL_ES )
 	typedef enum { Default, Glossy, Normals, Lighting, Mesh } ViewMode;
@@ -62,17 +67,10 @@ class NormalMappingApp : public AppNative {
 #endif
 
 public:
-	void	prepareSettings( Settings *settings );
-
 	void	setup();
-	void	shutdown();
 
 	void	update();
 	void	draw();
-	void	resize();
-
-	void	mouseDown( MouseEvent event );
-	void	mouseDrag( MouseEvent event );
 
 	void	keyDown( KeyEvent event );
 
@@ -93,7 +91,7 @@ private:
 	AxisAlignedBox3f	mMeshBounds;
 
 	CameraPersp			mCamera;
-	MayaCamUI			mMayaCamera;
+	CameraUi			mCamUi;
 
 	LightSource			mLightLantern;
 	LightSource			mLightAmbient;
@@ -126,19 +124,10 @@ private:
 #endif
 };
 
-void NormalMappingApp::prepareSettings( Settings *settings )
-{
-	settings->disableFrameRate();
-
-	settings->setWindowSize( 1024, 768 );
-	settings->setTitle( "OpenGL Core Profile - Normal Mapping Demo" );
-}
-
 void NormalMappingApp::setup()
 {
 	// setup camera and lights
-	mCamera.setEyePoint( vec3( 0.2f, 0.4f, 1.0f ) );
-	mCamera.setCenterOfInterestPoint( vec3(0.0f, 0.425f, 0.0f) );
+	mCamera.lookAt( vec3( 0.2f, 0.4f, 1.0f ), vec3(0.0f, 0.425f, 0.0f) );
 	mCamera.setNearClip( 0.01f );
 	mCamera.setFarClip( 100.0f );
 
@@ -199,8 +188,8 @@ void NormalMappingApp::setup()
 		mShaderNormalMapping->uniform( "uLights[1].specular", mLightAmbient.specular );
 		mShaderNormalMapping->uniform( "uNumOfLights", 2 );
 	}
-	catch( const std::exception& e ) {
-		console() << "Error loading asset: " << e.what() << std::endl;
+	catch( const std::exception &e ) {
+		CI_LOG_EXCEPTION( "Error loading asset", e );
 		quit();
 	}
 
@@ -215,7 +204,7 @@ void NormalMappingApp::setup()
 		mMeshDebug = createDebugMesh(mesh);
 	}
 	catch( const std::exception& e ) {
-		console() << "Error loading asset: " << e.what() << std::endl;
+		CI_LOG_EXCEPTION( "Error loading asset", e );
 		quit();
 	}
 
@@ -241,12 +230,10 @@ void NormalMappingApp::setup()
 	mParams->addParam( "Show Normals & Tangents", &mShowNormalsAndTangents );
 #endif
 
+	mCamUi = CameraUi( &mCamera, getWindow(), -1 );
+
 	// keep track of time
 	mTime = (float) getElapsedSeconds();
-}
-
-void NormalMappingApp::shutdown()
-{
 }
 
 void NormalMappingApp::update()
@@ -284,7 +271,7 @@ void NormalMappingApp::update()
 	mShaderNormalMapping->uniform( "uLights[1].position", mLightAmbient.position );
 
 #if ! defined( CINDER_GL_ES )
-	if(mShaderWireframe)
+	if( mShaderWireframe )
 		mShaderWireframe->uniform( "uViewportSize", vec2( getWindowSize() ) );
 #endif
 }
@@ -365,23 +352,6 @@ void NormalMappingApp::draw()
 	}
 }
 
-void NormalMappingApp::resize()
-{
-	mCamera.setAspectRatio( getWindowAspectRatio() );
-}
-
-void NormalMappingApp::mouseDown( MouseEvent event )
-{
-	mMayaCamera.setCurrentCam( mCamera );
-	mMayaCamera.mouseDown( event.getPos() );
-}
-
-void NormalMappingApp::mouseDrag( MouseEvent event )
-{
-	mMayaCamera.mouseDrag( event.getPos(), event.isLeftDown(), event.isMiddleDown(), event.isRightDown() );
-	mCamera = mMayaCamera.getCamera();
-}
-
 void NormalMappingApp::keyDown( KeyEvent event )
 {
 	switch( event.getCode() ) {
@@ -403,7 +373,7 @@ TriMesh NormalMappingApp::createMesh( const fs::path& mshFile )
 	if( fs::exists( mshFile ) ) {
 		timer.start();
 		mesh.read( loadFile( mshFile ) );
-		console() << "Loading the mesh took " << timer.getSeconds() << " seconds." << std::endl;
+		CI_LOG_I( "Loading the mesh took " << timer.getSeconds() << " seconds." );
 	}
 	else {
 		std::string msg = "Could not locate the file (" + mshFile.string() + ").";
@@ -414,7 +384,7 @@ TriMesh NormalMappingApp::createMesh( const fs::path& mshFile )
 	if( ! mesh.hasNormals() ) {
 		timer.start();
 		mesh.recalculateNormals();
-		console() << "Calculating " << mesh.getNumVertices() << " normals took " << timer.getSeconds() << " seconds." << std::endl;
+		CI_LOG_I( "Calculating " << mesh.getNumVertices() << " normals took " << timer.getSeconds() << " seconds." );
 	}
 
 	// if the mesh does not have tangents, calculate them on-the-fly
@@ -422,7 +392,7 @@ TriMesh NormalMappingApp::createMesh( const fs::path& mshFile )
 	if( ! mesh.hasTangents() ) {
 		timer.start();
 		mesh.recalculateTangents();
-		console() << "Calculating " << mesh.getNumVertices() << " tangents took " << timer.getSeconds() << " seconds." << std::endl;
+		CI_LOG_I( "Calculating " << mesh.getNumVertices() << " tangents took " << timer.getSeconds() << " seconds." );
 	}
 
 	return mesh;
@@ -439,4 +409,4 @@ gl::VboMeshRef NormalMappingApp::createDebugMesh( const TriMesh& mesh )
 	return result;
 }
 
-CINDER_APP_NATIVE( NormalMappingApp, RendererGl )
+CINDER_APP( NormalMappingApp, RendererGl, prepareSettings )

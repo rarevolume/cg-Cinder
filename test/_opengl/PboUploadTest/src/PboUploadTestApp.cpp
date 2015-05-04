@@ -1,4 +1,4 @@
-#include "cinder/app/AppNative.h"
+#include "cinder/app/App.h"
 #include "cinder/app/RendererGl.h"
 #include "cinder/gl/gl.h"
 #include "cinder/gl/Context.h"
@@ -18,11 +18,11 @@ static const int NUM_BUFFERS = 2;
 static const int ROWS_TO_FILL = 50;
 
 // Enable or disable this to experiment with PBOs on or off
-//#define USE_PBO
+#define USE_PBO
 // Enable or disable to experiment with double buffering the Texture and PBOs
 #define DOUBLE_BUFFER
 
-class PboUploadTestApp : public AppNative {
+class PboUploadTestApp : public App {
   public:
 	void setup();
 	void mouseDown( MouseEvent event );	
@@ -72,7 +72,7 @@ void PboUploadTestApp::update()
 	}
 	// fill all the rows
 #if defined( USE_PBO )
-	gl::BufferScope bscp( mPbos[mCurrentPbo] );
+	gl::ScopedBuffer bscp( mPbos[mCurrentPbo] );
 	// why does this slow things down on the Mac?
 //	mPbos[mCurrentPbo]->bufferData( mPbos[mCurrentPbo]->getSize(), nullptr, GL_STREAM_DRAW );
 	void *pboData = mPbos[mCurrentPbo]->map( GL_WRITE_ONLY );
@@ -112,4 +112,4 @@ void PboUploadTestApp::draw()
 	}
 }
 
-CINDER_APP_NATIVE( PboUploadTestApp, RendererGl )
+CINDER_APP( PboUploadTestApp, RendererGl )

@@ -1,14 +1,12 @@
-#include "cinder/app/AppNative.h"
+#include "cinder/app/App.h"
 #include "cinder/app/RendererGl.h"
 #include "cinder/gl/gl.h"
-#include "cinder/gl/Shader.h"
-#include "cinder/gl/Batch.h"
 
 using namespace ci;
 using namespace ci::app;
 using namespace std;
 
-class ImmediateModeApp : public AppNative {
+class ImmediateModeApp : public App {
   public:
 	void setup();
 	void draw();
@@ -36,4 +34,4 @@ void ImmediateModeApp::draw()
 	vb.draw();
 }
 
-CINDER_APP_NATIVE( ImmediateModeApp, RendererGl )
+CINDER_APP( ImmediateModeApp, RendererGl )

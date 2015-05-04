@@ -1,12 +1,6 @@
-#include "cinder/app/AppNative.h"
+#include "cinder/app/App.h"
 #include "cinder/app/RendererGl.h"
 #include "cinder/gl/gl.h"
-
-#include "cinder/gl/Context.h"
-#include "cinder/gl/GlslProg.h"
-#include "cinder/gl/Texture.h"
-#include "cinder/gl/Vao.h"
-#include "cinder/gl/Vbo.h"
 
 #include "cinder/TriMesh.h"
 #include "cinder/Camera.h"
@@ -34,7 +28,7 @@ float mix( float x, float y, float a )
 	return x * ( 1 - a ) + y * a;
 }
 
-class TransformFeedbackSmokeParticlesApp : public AppNative {
+class TransformFeedbackSmokeParticlesApp : public App {
   public:
 	void setup();
 	void mouseDown( MouseEvent event );
@@ -270,4 +264,4 @@ void TransformFeedbackSmokeParticlesApp::draw()
 	gl::popMatrices();
 }
 
-CINDER_APP_NATIVE( TransformFeedbackSmokeParticlesApp, RendererGl )
+CINDER_APP( TransformFeedbackSmokeParticlesApp, RendererGl )

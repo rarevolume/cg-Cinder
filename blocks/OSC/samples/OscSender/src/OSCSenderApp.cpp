@@ -32,8 +32,9 @@
  
  */
 
-#include "cinder/app/AppNative.h"
+#include "cinder/app/App.h"
 #include "cinder/app/RendererGl.h"
+#include "cinder/gl/gl.h"
 #include "cinder/System.h"
 #include "OscSender.h"
 
@@ -41,7 +42,7 @@ using namespace ci;
 using namespace ci::app;
 using namespace std;
 
-class OSCSenderApp : public AppNative {
+class OSCSenderApp : public App {
   public:
 	void setup();
 	void update();
@@ -96,4 +97,4 @@ void OSCSenderApp::draw()
 	gl::drawSolidRect(Rectf(vec2(0), vec2(positionX * getWindowWidth(), getWindowHeight())));
 }
 
-CINDER_APP_NATIVE( OSCSenderApp, RendererGl )
+CINDER_APP( OSCSenderApp, RendererGl )

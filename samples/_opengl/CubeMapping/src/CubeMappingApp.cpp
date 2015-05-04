@@ -1,16 +1,13 @@
-#include "cinder/app/AppNative.h"
+#include "cinder/app/App.h"
 #include "cinder/app/RendererGl.h"
 #include "cinder/ImageIo.h"
 #include "cinder/gl/gl.h"
-#include "cinder/gl/Texture.h"
-#include "cinder/gl/Batch.h"
-#include "cinder/gl/GlslProg.h"
 
 using namespace ci;
 using namespace ci::app;
 using namespace std;
 
-class CubeMappingApp : public AppNative {
+class CubeMappingApp : public App {
   public:
 	void setup();
 	void resize();
@@ -80,4 +77,4 @@ void CubeMappingApp::draw()
 	gl::popMatrices();		
 }
 
-CINDER_APP_NATIVE( CubeMappingApp, RendererGl )
+CINDER_APP( CubeMappingApp, RendererGl )

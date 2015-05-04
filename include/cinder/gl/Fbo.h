@@ -26,8 +26,9 @@
 
 #include "cinder/Cinder.h"
 #include "cinder/Exception.h"
-#include "cinder/gl/gl.h"
 #include "cinder/gl/Texture.h"
+#include "cinder/Matrix44.h"
+
 #include <map>
 #include <iosfwd>
 
@@ -117,6 +118,8 @@ class Fbo : public std::enable_shared_from_this<Fbo> {
 	float			getAspectRatio() const { return mWidth / (float)mHeight; }
 	//! Returns the Fbo::Format of this FBO
 	const Format&	getFormat() const { return mFormat; }
+	//! Returns the Fbo::Format of this FBO
+	Format			getFormat() { return mFormat; }
 
 	//! Returns a reference to the color Texture2d of the FBO (at \c GL_COLOR_ATTACHMENT0). Resolves multisampling and renders mipmaps if necessary. Returns an empty Ref if there is no Texture2d attached at \c GL_COLOR_ATTACHMENT0
 	Texture2dRef	getColorTexture();	
@@ -215,6 +218,8 @@ class Fbo : public std::enable_shared_from_this<Fbo> {
 		GLint	getDepthBufferInternalFormat() const { return mDepthBufferInternalFormat; }
 		//! Returns the Texture::Format for the default color texture at GL_COLOR_ATTACHMENT0.
 		const Texture::Format&	getColorTextureFormat() const { return mColorTextureFormat; }
+		//! Returns the Texture::Format for the depth texture.
+		const Texture::Format&	getDepthTextureFormat() const { return mDepthTextureFormat; }
 		//! Returns the number of samples used in MSAA-style antialiasing. Defaults to none, disabling multisampling.
 		int		getSamples() const { return mSamples; }
 		//! Returns the number of coverage samples used in CSAA-style antialiasing. Defaults to none. MSW only.
@@ -252,6 +257,7 @@ class Fbo : public std::enable_shared_from_this<Fbo> {
 		bool			mStencilBuffer;
 		Texture::Format	mColorTextureFormat, mDepthTextureFormat;
 		std::string		mLabel; // debug label
+
 		
 		std::map<GLenum,RenderbufferRef>	mAttachmentsBuffer;
 		std::map<GLenum,RenderbufferRef>	mAttachmentsMultisampleBuffer;
@@ -264,9 +270,10 @@ class Fbo : public std::enable_shared_from_this<Fbo> {
 	Fbo( int width, int height, const Format &format );
  
 	void		init();
-	void		initMultisample( bool csaa );
-	void		initMultisamplingSettings( bool *useMsaa, bool *useCsaa );
-	void		initFormatAttachments();
+	void		initMultisamplingSettings( bool *useMsaa, bool *useCsaa, Format *format );
+	void		prepareAttachments( const Format &format, bool multisampling );
+	void		attachAttachments();
+	void		initMultisample( const Format &format );
 	void		resolveTextures() const;
 	void		updateMipmaps( GLenum attachment ) const;
 	bool		checkStatus( class FboExceptionInvalidSpecification *resultExc );

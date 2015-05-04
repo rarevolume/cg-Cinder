@@ -1,17 +1,15 @@
-#include "cinder/app/AppNative.h"
+#include "cinder/app/App.h"
 #include "cinder/app/RendererGl.h"
-#include "cinder/gl/Shader.h"
-#include "cinder/gl/Batch.h"
-#include "cinder/gl/VboMesh.h"
+#include "cinder/gl/gl.h"
 #include "cinder/ImageIo.h"
 #include "cinder/Utilities.h"
 #include "cinder/params/Params.h"
-#include "cinder/gl/Ubo.h"
+#include "cinder/GeomIo.h"
 
 using namespace ci;
 using namespace ci::app;
 
-class SuperformulaGpuApp : public AppNative {
+class SuperformulaGpuApp : public App {
   public:
 	void	setup() override;
 	void	resize() override;
@@ -156,4 +154,4 @@ void SuperformulaGpuApp::draw()
 #endif
 }
 
-CINDER_APP_NATIVE( SuperformulaGpuApp, RendererGl )
+CINDER_APP( SuperformulaGpuApp, RendererGl )

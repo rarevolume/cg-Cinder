@@ -21,7 +21,8 @@
  POSSIBILITY OF SUCH DAMAGE.
 */
 
-#include "cinder/App/App.h"
+#include "cinder/Camera.h"
+#include "cinder/Frustum.h"
 #include "cinder/GeomIo.h"
 #include "cinder/Quaternion.h"
 #include "cinder/Log.h"
@@ -29,6 +30,7 @@
 #include "cinder/Triangulate.h"
 #include "cinder/BSpline.h"
 #include "cinder/Matrix.h"
+#include "cinder/Sphere.h"
 #include <algorithm>
 
 using namespace std;
@@ -49,6 +51,8 @@ std::string attribToString( Attrib attrib )
 {
 	if( attrib < Attrib::NUM_ATTRIBS )
 		return sAttribNames[(int)attrib];
+	else if( attrib == Attrib::USER_DEFINED )
+		return "USER_DEFINED";
 	else
 		return "";
 }
@@ -139,6 +143,7 @@ size_t BufferLayout::calcRequiredStorage( size_t numVertices ) const
 // Source
 namespace { // these are helper functions for copyData() and copyDataMultAdd
 
+// Assumes source is tightly packed
 template<uint8_t SRCDIM, uint8_t DSTDIM>
 void copyDataImpl( const float *srcData, size_t numElements, size_t dstStrideBytes, float *dstData )
 {
@@ -160,12 +165,97 @@ void copyDataImpl( const float *srcData, size_t numElements, size_t dstStrideByt
 		dstData = (float*)((uint8_t*)dstData + dstStrideBytes);
 	}
 }
+
+template<uint8_t SRCDIM, uint8_t DSTDIM>
+void copyDataImpl( const float *srcData, size_t srcStrideBytes, size_t numElements, size_t dstStrideBytes, float *dstData )
+{
+	static const float sFillerData[4] = { 0, 0, 0, 1 };
+	const uint8_t MINDIM = (SRCDIM < DSTDIM) ? SRCDIM : DSTDIM;
+
+	if( dstStrideBytes == 0 )
+		dstStrideBytes = DSTDIM * sizeof(float);
+	if( srcStrideBytes == 0 )
+		srcStrideBytes = SRCDIM * sizeof(float);
+
+	for( size_t v = 0; v < numElements; ++v ) {
+		uint8_t d;
+		for( d = 0; d < MINDIM; ++d ) {
+			dstData[d] = srcData[d];
+		}
+		for( ; d < DSTDIM; ++d ) {
+			dstData[d] = sFillerData[d];
+		}
+		srcData = (float*)((uint8_t*)srcData + srcStrideBytes);
+		dstData = (float*)((uint8_t*)dstData + dstStrideBytes);
+	}
+}
 } // anonymous namespace
+
+void copyData( uint8_t srcDimensions, size_t srcStrideBytes, const float *srcData, size_t numElements, uint8_t dstDimensions, size_t dstStrideBytes, float *dstData )
+{
+	if( srcStrideBytes == 0 )
+		srcStrideBytes = srcDimensions * sizeof(float);
+	if( dstStrideBytes == 0 )
+		dstStrideBytes = dstDimensions * sizeof(float);
+
+	// call equivalent method that doesn't support srcStrideBytes
+	if( srcStrideBytes == srcDimensions * sizeof(float) )
+		copyData( srcDimensions, srcData, numElements, dstDimensions, dstStrideBytes, dstData );
+	// we can get away with a memcpy
+	else if( (srcDimensions == dstDimensions) && (dstStrideBytes == dstDimensions * sizeof(float)) && (srcStrideBytes == dstStrideBytes) ) {
+		memcpy( dstData, srcData, numElements * srcDimensions * sizeof(float) );
+	}
+	else {
+		switch( srcDimensions ) {
+			case 1:
+				switch( dstDimensions ) {
+					case 1: copyDataImpl<1,1>( srcData, srcStrideBytes, numElements, dstStrideBytes, dstData ); break;
+					case 2: copyDataImpl<1,2>( srcData, srcStrideBytes, numElements, dstStrideBytes, dstData ); break;
+					case 3: copyDataImpl<1,3>( srcData, srcStrideBytes, numElements, dstStrideBytes, dstData ); break;
+					case 4: copyDataImpl<1,4>( srcData, srcStrideBytes, numElements, dstStrideBytes, dstData ); break;
+					default: throw ExcIllegalDestDimensions();
+				}
+			break;
+			case 2:
+				switch( dstDimensions ) {
+					case 1: copyDataImpl<2,1>( srcData, srcStrideBytes, numElements, dstStrideBytes, dstData ); break;
+					case 2: copyDataImpl<2,2>( srcData, srcStrideBytes, numElements, dstStrideBytes, dstData ); break;
+					case 3: copyDataImpl<2,3>( srcData, srcStrideBytes, numElements, dstStrideBytes, dstData ); break;
+					case 4: copyDataImpl<2,4>( srcData, srcStrideBytes, numElements, dstStrideBytes, dstData ); break;
+					default: throw ExcIllegalDestDimensions();
+				}
+			break;
+			case 3:
+				switch( dstDimensions ) {
+					case 1: copyDataImpl<3,1>( srcData, srcStrideBytes, numElements, dstStrideBytes, dstData ); break;
+					case 2: copyDataImpl<3,2>( srcData, srcStrideBytes, numElements, dstStrideBytes, dstData ); break;
+					case 3: copyDataImpl<3,3>( srcData, srcStrideBytes, numElements, dstStrideBytes, dstData ); break;
+					case 4: copyDataImpl<3,4>( srcData, srcStrideBytes, numElements, dstStrideBytes, dstData ); break;
+					default: throw ExcIllegalDestDimensions();
+				}
+			break;
+			case 4:
+				switch( dstDimensions ) {
+					case 1: copyDataImpl<4,1>( srcData, srcStrideBytes, numElements, dstStrideBytes, dstData ); break;
+					case 2: copyDataImpl<4,2>( srcData, srcStrideBytes, numElements, dstStrideBytes, dstData ); break;
+					case 3: copyDataImpl<4,3>( srcData, srcStrideBytes, numElements, dstStrideBytes, dstData ); break;
+					case 4: copyDataImpl<4,4>( srcData, srcStrideBytes, numElements, dstStrideBytes, dstData ); break;
+					default: throw ExcIllegalDestDimensions();
+				}
+			break;
+			default:
+				throw ExcIllegalSourceDimensions();
+		}
+	}
+}
 
 void copyData( uint8_t srcDimensions, const float *srcData, size_t numElements, uint8_t dstDimensions, size_t dstStrideBytes, float *dstData )
 {
+	if( dstStrideBytes == 0 )
+		dstStrideBytes = dstDimensions * sizeof(float);
+
 	// we can get away with a memcpy
-	if( (srcDimensions == dstDimensions) && (dstStrideBytes == 0) ) {
+	if( (srcDimensions == dstDimensions) && (dstStrideBytes == dstDimensions * sizeof(float)) ) {
 		memcpy( dstData, srcData, numElements * srcDimensions * sizeof(float) );
 	}
 	else {
@@ -218,42 +308,42 @@ template<typename T>
 void copyIndexDataForceTrianglesImpl( Primitive primitive, const uint32_t *source, size_t numIndices, T *target )
 {
 	switch( primitive ) {
-	case Primitive::LINES:
-	case Primitive::LINE_STRIP:
-	case Primitive::TRIANGLES:
-		memcpy( target, source, sizeof(uint32_t) * numIndices );
+		case Primitive::LINES:
+		case Primitive::LINE_STRIP:
+		case Primitive::TRIANGLES:
+			memcpy( target, source, sizeof(uint32_t) * numIndices );
 		break;
-	case Primitive::TRIANGLE_STRIP: { // ABC, CBD, CDE, EDF, etc
-		if( numIndices < 3 )
-			return;
-		size_t outIdx = 0; // (012, 213), (234, 435), etc : (odd,even), (odd,even), etc
-		for( size_t i = 0; i < numIndices - 2; ++i ) {
-			if( i & 1 ) { // odd
-				target[outIdx++] = source[i+1];
+		case Primitive::TRIANGLE_STRIP: { // ABC, CBD, CDE, EDF, etc
+			if( numIndices < 3 )
+				return;
+			size_t outIdx = 0; // (012, 213), (234, 435), etc : (odd,even), (odd,even), etc
+			for( size_t i = 0; i < numIndices - 2; ++i ) {
+				if( i & 1 ) { // odd
+					target[outIdx++] = source[i+1];
+					target[outIdx++] = source[i];
+					target[outIdx++] = source[i+2];
+				}
+				else { // even
+					target[outIdx++] = source[i];
+					target[outIdx++] = source[i+1];
+					target[outIdx++] = source[i+2];
+				}
+			}
+		}
+		break;
+		case Primitive::TRIANGLE_FAN: { // ABC, ACD, ADE, etc
+			if( numIndices < 3 )
+				return;
+			size_t outIdx = 0;
+			for( size_t i = 0; i < numIndices - 2; ++i ) {
 				target[outIdx++] = source[0];
-				target[outIdx++] = source[i+2];
-			}
-			else { // even
-				target[outIdx++] = source[i];
 				target[outIdx++] = source[i+1];
 				target[outIdx++] = source[i+2];
 			}
 		}
-									}
-									break;
-	case Primitive::TRIANGLE_FAN: { // ABC, ACD, ADE, etc
-		if( numIndices < 3 )
-			return;
-		size_t outIdx = 0;
-		for( size_t i = 0; i < numIndices - 2; ++i ) {
-			target[outIdx++] = source[0];
-			target[outIdx++] = source[i+1];
-			target[outIdx++] = source[i+2];
-		}
-									}
-	default:
-		throw ExcIllegalPrimitiveType();			
 		break;
+		default:
+			throw ExcIllegalPrimitiveType();
 	}
 }
 
@@ -378,35 +468,23 @@ const float Rect::sNormals[4*3] = {0, 0, 1,	0, 0, 1,	0, 0, 1,	0, 0, 1 };
 const float Rect::sTangents[4*3] = {0.7071067f, 0.7071067f, 0,	0.7071067f, 0.7071067f, 0,	0.7071067f, 0.7071067f, 0,	0.7071067f, 0.7071067f, 0 };
 
 Rect::Rect()
+	: mHasColors( false )
 {
 	// upper-right, upper-left, lower-right, lower-left
 	mPositions[0] = vec2(  0.5f, -0.5f );
-	mTexCoords[0] = vec2( 1, 1 );
-	mColors[0] = ColorAf( 1, 0, 1, 1 );	
 	mPositions[1] = vec2( -0.5f, -0.5f );
-	mTexCoords[1] = vec2( 0, 1 );
-	mColors[1] = ColorAf( 0, 0, 1, 1 );	
 	mPositions[2] = vec2(  0.5f,  0.5f );
-	mTexCoords[2] = vec2( 1, 0 );
-	mColors[2] = ColorAf( 1, 1, 1, 1 );
 	mPositions[3] = vec2( -0.5f,  0.5f );
-	mTexCoords[3] = vec2( 0, 0 );
-	mColors[3] = ColorAf( 0, 1, 1, 1 );
+	setDefaultColors();
+	setDefaultTexCoords();
 }
 
 Rect::Rect( const Rectf &r )
+	: mHasColors( false )
 {
 	rect( r );
-	
-	// upper-right, upper-left, lower-right, lower-left
-	mTexCoords[0] = vec2( 1, 1 );
-	mColors[0] = ColorAf( 1, 0, 1, 1 );
-	mTexCoords[1] = vec2( 0, 1 );
-	mColors[1] = ColorAf( 0, 0, 1, 1 );	
-	mTexCoords[2] = vec2( 1, 0 );
-	mColors[2] = ColorAf( 1, 1, 1, 1 );
-	mTexCoords[3] = vec2( 0, 0 );
-	mColors[3] = ColorAf( 0, 1, 1, 1 );
+	setDefaultColors();
+	setDefaultTexCoords();
 }
 
 Rect& Rect::rect( const Rectf &r )
@@ -420,6 +498,7 @@ Rect& Rect::rect( const Rectf &r )
 
 Rect& Rect::colors( const ColorAf &upperLeft, const ColorAf &upperRight, const ColorAf &lowerRight, const ColorAf &lowerLeft )
 {
+	mHasColors = true;
 	mColors[0] = upperRight;
 	mColors[1] = upperLeft;
 	mColors[2] = lowerRight;
@@ -456,7 +535,7 @@ uint8_t	Rect::getAttribDims( Attrib attr ) const
 		case Attrib::POSITION: return 2;
 		case Attrib::NORMAL: return 3;
 		case Attrib::TEX_COORD_0: return 2;
-		case Attrib::COLOR: return 4;
+		case Attrib::COLOR: return mHasColors ? 4 : 0;
 		case Attrib::TANGENT: return 3;
 		default:
 			return 0;
@@ -466,6 +545,24 @@ uint8_t	Rect::getAttribDims( Attrib attr ) const
 AttribSet Rect::getAvailableAttribs() const
 {
 	return { Attrib::POSITION, Attrib::NORMAL, Attrib::TEX_COORD_0, Attrib::COLOR, Attrib::TANGENT };
+}
+
+void Rect::setDefaultColors()
+{
+	// upper-right, upper-left, lower-right, lower-left
+	mColors[0] = ColorAf( 0.0f, 1.0f, 0.0f, 1.0f );
+	mColors[1] = ColorAf( 1.0f, 0.0f, 0.0f, 1.0f );	
+	mColors[2] = ColorAf( 0.0f, 0.0f, 1.0f, 1.0f );
+	mColors[3] = ColorAf( 1.0f, 1.0f, 0.0f, 1.0f );
+}
+
+void Rect::setDefaultTexCoords()
+{
+	// upper-right, upper-left, lower-right, lower-left
+	mTexCoords[0] = vec2( 1.0f, 1.0f );
+	mTexCoords[1] = vec2( 0.0f, 1.0f );
+	mTexCoords[2] = vec2( 1.0f, 0.0f );
+	mTexCoords[3] = vec2( 0.0f, 0.0f );
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////
@@ -481,12 +578,6 @@ Cube::Cube()
 	mColors[5] = Color(1,1,0);
 }
 
-Cube& Cube::colors()
-{
-	mHasColors = true;
-	return *this;
-}
-
 Cube& Cube::colors( const ColorAf &posX, const ColorAf &negX, const ColorAf &posY, const ColorAf &negY, const ColorAf &posZ, const ColorAf &negZ )
 {
 	mHasColors = true;
@@ -496,12 +587,6 @@ Cube& Cube::colors( const ColorAf &posX, const ColorAf &negX, const ColorAf &pos
 	mColors[3] = negY;
 	mColors[4] = posZ;
 	mColors[5] = negZ;
-	return *this;
-}
-
-Cube& Cube::disableColors()
-{
-	mHasColors = false;
 	return *this;
 }
 
@@ -609,24 +694,26 @@ void Cube::loadInto( Target *target, const AttribSet &requestedAttribs ) const
 		texCoords.reserve( numVertices );
 		texCoordsPtr = &texCoords;
 	}
+
+	vec3 sz = 0.5f * mSize;
 	
 	// +X
-	generateFace( vec3(mSize.x,0,0), vec3(0,0,mSize.z), vec3(0,mSize.y,0), mSubdivisions.z, mSubdivisions.y, &positions,
+	generateFace( vec3(sz.x,0,0), vec3(0,0,sz.z), vec3(0,sz.y,0), mSubdivisions.z, mSubdivisions.y, &positions,
 		normalsPtr, mColors[0], colorsPtr, texCoordsPtr, &indices );
 	// +Y
-	generateFace( vec3(0,mSize.y,0), vec3(mSize.x,0,0), vec3(0,0,mSize.z), mSubdivisions.x, mSubdivisions.z, &positions,
+	generateFace( vec3(0,sz.y,0), vec3(sz.x,0,0), vec3(0,0,sz.z), mSubdivisions.x, mSubdivisions.z, &positions,
 		normalsPtr, mColors[2], colorsPtr, texCoordsPtr, &indices );
 	// +Z
-	generateFace( vec3(0,0,mSize.z), vec3(0,mSize.y,0), vec3(mSize.x,0,0), mSubdivisions.y, mSubdivisions.x, &positions,
+	generateFace( vec3(0,0,sz.z), vec3(0,sz.y,0), vec3(sz.x,0,0), mSubdivisions.y, mSubdivisions.x, &positions,
 		normalsPtr, mColors[4], colorsPtr, texCoordsPtr, &indices );
 	// -X
-	generateFace( vec3(-mSize.x,0,0), vec3(0,mSize.y,0), vec3(0,0,mSize.z), mSubdivisions.y, mSubdivisions.z, &positions,
+	generateFace( vec3(-sz.x,0,0), vec3(0,sz.y,0), vec3(0,0,sz.z), mSubdivisions.y, mSubdivisions.z, &positions,
 		normalsPtr, mColors[1], colorsPtr, texCoordsPtr, &indices );
 	// -Y
-	generateFace( vec3(0,-mSize.y,0), vec3(0,0,mSize.z), vec3(mSize.x,0,0), mSubdivisions.z, mSubdivisions.x, &positions,
+	generateFace( vec3(0,-sz.y,0), vec3(0,0,sz.z), vec3(sz.x,0,0), mSubdivisions.z, mSubdivisions.x, &positions,
 		normalsPtr, mColors[3], colorsPtr, texCoordsPtr, &indices );
 	// -Z
-	generateFace( vec3(0,0,-mSize.z), vec3(mSize.x,0,0), vec3(0,mSize.y,0), mSubdivisions.x, mSubdivisions.y, &positions,
+	generateFace( vec3(0,0,-sz.z), vec3(sz.x,0,0), vec3(0,sz.y,0), mSubdivisions.x, mSubdivisions.y, &positions,
 		normalsPtr, mColors[5], colorsPtr, texCoordsPtr, &indices );
 
 	target->copyAttrib( Attrib::POSITION, 3, 0, (const float*)positions.data(), numVertices );
@@ -1293,6 +1380,11 @@ void Circle::loadInto( Target *target, const AttribSet &requestedAttribs ) const
 
 Sphere::Sphere()
 	: mSubdivisions( 18 ), mCenter( 0, 0, 0 ), mRadius( 1.0f ), mHasColors( false )
+{
+}
+
+Sphere::Sphere( const ci::Sphere &sphere )
+	: mSubdivisions( 18 ), mCenter( sphere.getCenter() ), mRadius( sphere.getRadius() ), mHasColors( false )
 {
 }
 
@@ -2826,7 +2918,392 @@ void BSpline::loadInto( Target *target, const AttribSet &requestedAttribs ) cons
 }
 
 template BSpline::BSpline( const ci::BSpline<2,float>&, int );
-template BSpline::BSpline( const ci::BSpline<3,float>&, int );
+template BSpline::BSpline( const ci::BSpline<3, float>&, int );
+
+
+///////////////////////////////////////////////////////////////////////////////////////
+// WireCircle
+size_t WireCircle::getNumVertices() const
+{
+	return 2 * mNumSegments;
+}
+
+void WireCircle::loadInto( Target *target, const AttribSet &requestedAttribs ) const
+{
+	size_t numVertices = getNumVertices();
+
+	std::vector<vec3> positions;
+	positions.resize( numVertices );
+
+	vec3 *ptr = positions.data();
+
+	float angle = float( 2.0 * M_PI / mNumSegments );
+
+	*ptr = mCenter + mRadius * vec3( 1, 0, 0 );
+	for( int i = 1; i < mNumSegments; ++i ) {
+		vec3 v = mCenter + mRadius * vec3( glm::cos( i * angle ), glm::sin( i * angle ), 0 );
+		*ptr++ = v;
+		*ptr++ = v;
+	}
+	*ptr = mCenter + mRadius * vec3( 1, 0, 0 );
+
+	target->copyAttrib( Attrib::POSITION, 3, 0, (const float*) positions.data(), numVertices );
+}
+
+
+///////////////////////////////////////////////////////////////////////////////////////
+// WireCube
+void WireCube::loadInto( Target *target, const AttribSet &requestedAttribs ) const
+{
+	size_t numVertices = getNumVertices();
+
+	std::vector<vec3> positions;
+	positions.resize( numVertices );
+
+	vec3 d = -0.5f * mSize;
+	vec3 s = mSize / vec3( mSubdivisions );
+
+	vec3 *ptr = positions.data();
+	*ptr++ = vec3( -d.x, d.y, d.z );
+	*ptr++ = vec3( d.x, d.y, d.z );
+	*ptr++ = vec3( -d.x, -d.y, d.z );
+	*ptr++ = vec3( d.x, -d.y, d.z );
+	*ptr++ = vec3( -d.x, d.y, -d.z );
+	*ptr++ = vec3( d.x, d.y, -d.z );
+	*ptr++ = vec3( -d.x, -d.y, -d.z );
+	*ptr++ = vec3( d.x, -d.y, -d.z );
+
+	*ptr++ = vec3( d.x, -d.y, d.z );
+	*ptr++ = vec3( d.x, d.y, d.z );
+	*ptr++ = vec3( -d.x, -d.y, d.z );
+	*ptr++ = vec3( -d.x, d.y, d.z );
+	*ptr++ = vec3( d.x, -d.y, -d.z );
+	*ptr++ = vec3( d.x, d.y, -d.z );
+	*ptr++ = vec3( -d.x, -d.y, -d.z );
+	*ptr++ = vec3( -d.x, d.y, -d.z );
+
+	*ptr++ = vec3( d.x, d.y, -d.z );
+	*ptr++ = vec3( d.x, d.y, d.z );
+	*ptr++ = vec3( -d.x, d.y, -d.z );
+	*ptr++ = vec3( -d.x, d.y, d.z );
+	*ptr++ = vec3( d.x, -d.y, -d.z );
+	*ptr++ = vec3( d.x, -d.y, d.z );
+	*ptr++ = vec3( -d.x, -d.y, -d.z );
+	*ptr++ = vec3( -d.x, -d.y, d.z );
+
+	for( int i = 1; i < mSubdivisions.x; ++i ) {
+		float x = d.x + i * s.x;
+		*ptr++ = vec3( x, d.y, d.z );
+		*ptr++ = vec3( x, -d.y, d.z );
+		*ptr++ = vec3( x, -d.y, d.z );
+		*ptr++ = vec3( x, -d.y, -d.z );
+		*ptr++ = vec3( x, -d.y, -d.z );
+		*ptr++ = vec3( x, d.y, -d.z );
+		*ptr++ = vec3( x, d.y, -d.z );
+		*ptr++ = vec3( x, d.y, d.z );
+	}
+
+	for( int i = 1; i < mSubdivisions.y; ++i ) {
+		float y = d.y + i * s.y;
+		*ptr++ = vec3( d.x, y, d.z );
+		*ptr++ = vec3( -d.x, y, d.z );
+		*ptr++ = vec3( -d.x, y, d.z );
+		*ptr++ = vec3( -d.x, y, -d.z );
+		*ptr++ = vec3( -d.x, y, -d.z );
+		*ptr++ = vec3( d.x, y, -d.z );
+		*ptr++ = vec3( d.x, y, -d.z );
+		*ptr++ = vec3( d.x, y, d.z );
+	}
+
+	for( int i = 1; i < mSubdivisions.z; ++i ) {
+		float z = d.z + i * s.z;
+		*ptr++ = vec3( d.x, d.y, z );
+		*ptr++ = vec3( -d.x, d.y, z );
+		*ptr++ = vec3( -d.x, d.y, z );
+		*ptr++ = vec3( -d.x, -d.y, z );
+		*ptr++ = vec3( -d.x, -d.y, z );
+		*ptr++ = vec3( d.x, -d.y, z );
+		*ptr++ = vec3( d.x, -d.y, z );
+		*ptr++ = vec3( d.x, d.y, z );
+	}
+
+	target->copyAttrib( Attrib::POSITION, 3, 0, (const float*) positions.data(), numVertices );
+}
+
+
+///////////////////////////////////////////////////////////////////////////////////////
+// WireCylinder
+size_t WireCylinder::getNumVertices() const
+{
+	int subdivisionAxis = ( mSubdivisionsAxis > 1 ) ? mSubdivisionsAxis : 0;
+	int subdivisionHeight = mSubdivisionsHeight + 1;
+
+	if( mRadiusApex <= 0.0f && mRadiusBase <= 0.0f )
+		subdivisionHeight = 0;
+	else if( mRadiusApex <= 0.0f || mRadiusBase <= 0.0f )
+		subdivisionHeight--;
+
+	return ( subdivisionAxis + subdivisionHeight * mNumSegments ) * 2;
+}
+
+void WireCylinder::loadInto( Target *target, const AttribSet &requestedAttribs ) const
+{
+	size_t numVertices = getNumVertices();
+
+	std::vector<vec3> positions;
+	positions.resize( numVertices );
+
+	vec3 *ptr = positions.data();
+
+	glm::mat3 m = glm::toMat3( glm::quat( vec3( 0, 1, 0 ), mDirection ) );
+
+	if ( mSubdivisionsAxis > 1 ) {
+		float angle = float( 2.0 * M_PI / mSubdivisionsAxis );
+		for( int i = 0; i < mSubdivisionsAxis; ++i ) {
+			float c = glm::cos( i * angle );
+			float s = glm::sin( i * angle );
+			*ptr++ = mOrigin + m * vec3( mRadiusBase * c, 0, mRadiusBase * s );
+			*ptr++ = mOrigin + m * vec3( mRadiusApex * c, mHeight, mRadiusApex * s );
+		}
+	}
+	
+	float angle = float( 2.0 * M_PI / mNumSegments );
+	for( int i = 0; i <= mSubdivisionsHeight; ++i ) {
+		float height = i * mHeight / mSubdivisionsHeight;
+		float radius = lerp<float>( mRadiusBase, mRadiusApex, float( i ) / mSubdivisionsHeight );
+		if( radius <= 0.0f )
+			continue;
+
+		*ptr++ = mOrigin + m * vec3( radius, height, 0 );
+		for( int j = 1; j < mNumSegments; ++j ) {
+			vec3 v = mOrigin + m * vec3( radius * glm::cos( j * angle ), height, radius * glm::sin( j * angle ) );
+			*ptr++ = v;
+			*ptr++ = v;
+		}
+		*ptr++ = mOrigin + m * vec3( radius, height, 0 );
+	}
+
+	target->copyAttrib( Attrib::POSITION, 3, 0, (const float*) positions.data(), numVertices );
+}
+
+WireFrustum::WireFrustum( const CameraPersp &cam )
+{
+	cam.getNearClipCoordinates( &ntl, &ntr, &nbl, &nbr );
+	cam.getFarClipCoordinates( &ftl, &ftr, &fbl, &fbr );
+}
+
+void WireFrustum::loadInto( Target *target, const AttribSet &requestedAttribs ) const
+{
+	/*// extract camera position from view matrix, so that it will work with CameraStereo as well
+	//  see: http://www.gamedev.net/topic/397751-how-to-get-camera-position/page__p__3638207#entry3638207
+	mat4 view = cam.getViewMatrix();
+	vec3 eye;
+	eye.x = -( view[0][0] * view[3][0] + view[0][1] * view[3][1] + view[0][2] * view[3][2] );
+	eye.y = -( view[1][0] * view[3][0] + view[1][1] * view[3][1] + view[1][2] * view[3][2] );
+	eye.z = -( view[2][0] * view[3][0] + view[2][1] * view[3][1] + view[2][2] * view[3][2] );
+	//*/
+
+	size_t numVertices = getNumVertices();
+
+	std::vector<vec3> positions;
+	positions.resize( numVertices );
+
+	vec3 *ptr = positions.data();
+	*ptr++ = ntl;	*ptr++ = ntr;
+	*ptr++ = ntr;	*ptr++ = nbr;
+	*ptr++ = nbr;	*ptr++ = nbl;
+	*ptr++ = nbl;	*ptr++ = ntl;
+
+	*ptr++ = ftl;	*ptr++ = ftr;
+	*ptr++ = ftr;	*ptr++ = fbr;
+	*ptr++ = fbr;	*ptr++ = fbl;
+	*ptr++ = fbl;	*ptr++ = ftl;
+
+	*ptr++ = ftl;	*ptr++ = ntl;
+	*ptr++ = ftr;	*ptr++ = ntr;
+	*ptr++ = fbr;	*ptr++ = nbr;
+	*ptr++ = fbl;	*ptr++ = nbl;
+
+	//gl::ScopedColor color( 0.25f * gl::context()->getCurrentColor() );
+	//implDrawLine( eye, nearTopLeft );
+	//implDrawLine( eye, nearTopRight );
+	//implDrawLine( eye, nearBottomRight );
+	//implDrawLine( eye, nearBottomLeft );
+
+	target->copyAttrib( Attrib::POSITION, 3, 0, (const float*) positions.data(), numVertices );
+}
+
+///////////////////////////////////////////////////////////////////////////////////////
+// WirePlane
+WirePlane& WirePlane::subdivisions( const ivec2 &subdivisions )
+{
+	mSubdivisions.x = std::max( subdivisions.x, 1 );
+	mSubdivisions.y = std::max( subdivisions.y, 1 );
+	return *this;
+}
+
+WirePlane& WirePlane::normal( const vec3 &normal )
+{
+	auto normalNormal = normalize( normal );
+	float yAxisDot = dot( normalNormal, vec3( 0, 1, 0 ) );
+	if( abs( yAxisDot ) < 0.999f ) {
+		quat normalQuat( vec3( 0, 1, 0 ), normalNormal );
+		mAxisU = normalQuat * vec3( 1, 0, 0 );
+		mAxisV = normalQuat * vec3( 0, 0, 1 );
+	}
+	else {
+		quat normalQuat( vec3( 0, 0, 1 ), normalNormal );
+		mAxisU = normalQuat * vec3( 1, 0, 0 );
+		mAxisV = normalQuat * vec3( 0, -1, 0 );
+	}
+
+	return *this;
+}
+
+WirePlane& WirePlane::axes( const vec3 &uAxis, const vec3 &vAxis )
+{
+	mAxisU = normalize( uAxis );
+	mAxisV = normalize( vAxis );
+	return *this;
+}
+
+void WirePlane::loadInto( Target *target, const AttribSet &requestedAttribs ) const
+{
+	size_t numVertices = getNumVertices();
+
+	std::vector<vec3> positions;
+	positions.resize( numVertices );
+
+	vec3 *ptr = positions.data();
+
+	const vec2 stepIncr = vec2( 1, 1 ) / vec2( mSubdivisions );
+	const vec3 normal = cross( mAxisV, mAxisU );
+
+	for( int x = 0; x <= mSubdivisions.x; ++x ) {
+		float u = x * stepIncr.x - 0.5f;
+		*ptr++ = mOrigin + ( mSize.x *  u ) * mAxisU + ( mSize.y * -0.5f ) * mAxisV;
+		*ptr++ = mOrigin + ( mSize.x *  u ) * mAxisU + ( mSize.y * +0.5f ) * mAxisV;
+	}
+
+	for( int y = 0; y <= mSubdivisions.y; ++y ) {
+		float v = y * stepIncr.y - 0.5f;
+		*ptr++ = mOrigin + ( mSize.x * -0.5f ) * mAxisU + ( mSize.y * v ) * mAxisV;
+		*ptr++ = mOrigin + ( mSize.x * +0.5f ) * mAxisU + ( mSize.y * v ) * mAxisV;
+	}
+
+	target->copyAttrib( Attrib::POSITION, 3, 0, (const float*) positions.data(), numVertices );
+}
+
+
+///////////////////////////////////////////////////////////////////////////////////////
+// WireSphere
+size_t WireSphere::getNumVertices() const
+{
+	int subdivisionAxis = ( mSubdivisionsAxis > 1 ) ? mSubdivisionsAxis : 0;
+	return ( mSubdivisionsHeight - 1 ) * mNumSegments * 2 + ( ( mNumSegments + 1 ) / 2 ) * subdivisionAxis * 2;
+}
+
+void WireSphere::loadInto( Target *target, const AttribSet &requestedAttribs ) const
+{
+	size_t numVertices = getNumVertices();
+
+	std::vector<vec3> positions;
+	positions.resize( numVertices );
+
+	vec3 *ptr = positions.data();
+
+	float angle = float( 2.0 * M_PI / mNumSegments );
+	for( int i = 1; i < mSubdivisionsHeight; ++i ) {
+		float f = float( i ) / mSubdivisionsHeight * 2.0f - 1.0f;
+		float radius = mRadius * glm::cos( f * float( M_PI / 2.0 ) );
+		vec3 center = mCenter + mRadius * vec3( 0, glm::sin( f * float( M_PI / 2.0 ) ), 0 );
+
+		*ptr++ = center + vec3( 0, 0, 1 ) * radius;
+		for( int j = 1; j < mNumSegments; ++j ) {
+			vec3 v = center + vec3( glm::sin( j * angle ), 0, glm::cos( j * angle ) ) * radius;
+			*ptr++ = v;
+			*ptr++ = v;
+		}
+		*ptr++ = center + vec3( 0, 0, 1 ) * radius;
+	}
+
+	if( mSubdivisionsAxis > 1 ) {
+		int semidiv = ( mNumSegments + 1 ) / 2;
+		float semi = float( M_PI / semidiv );
+		float angle = float( 2.0 * M_PI / mSubdivisionsAxis );
+
+		for( int i = 0; i < mSubdivisionsAxis; ++i ) {
+			*ptr++ = mCenter + vec3( 0, 1, 0 ) * mRadius;
+			for( int j = 1; j < semidiv; ++j ) {
+				vec3 v = mCenter + vec3( glm::sin( j * semi ) * glm::sin( i * angle ), glm::cos( j * semi ), glm::sin( j * semi ) * glm::cos( i * angle ) ) * mRadius;
+				*ptr++ = v;
+				*ptr++ = v;
+			}
+			*ptr++ = mCenter + vec3( 0, -1, 0 ) * mRadius;
+		}
+	}
+
+	target->copyAttrib( Attrib::POSITION, 3, 0, (const float*) positions.data(), numVertices );
+}
+
+
+///////////////////////////////////////////////////////////////////////////////////////
+// WireTorus
+size_t WireTorus::getNumVertices() const
+{
+	int subdivisionAxis = ( mSubdivisionsAxis > 1 ) ? mSubdivisionsAxis : 0;
+	int subdivisionHeight = ( mSubdivisionsHeight > 1 ) ? mSubdivisionsHeight : 0;
+	return ( subdivisionHeight + subdivisionAxis ) * mNumSegments * 2;
+}
+
+void WireTorus::loadInto( Target *target, const AttribSet &requestedAttribs ) const
+{
+	size_t numVertices = getNumVertices();
+
+	std::vector<vec3> positions;
+	positions.resize( numVertices );
+
+	vec3 *ptr = positions.data();
+
+	if( mSubdivisionsHeight > 1 ) {
+		float angle = float( 2.0 * M_PI / mSubdivisionsHeight );
+		float step = float( 2.0 * M_PI / mNumSegments );
+		for( int i = 0; i < mSubdivisionsHeight; ++i ) {
+			float radius = mRadiusMinor + ( mRadiusMajor - mRadiusMinor ) * glm::cos( i * angle );
+			vec3 center = mCenter + vec3( 0, ( mRadiusMajor - mRadiusMinor ) * glm::sin( i*angle ), 0 );
+
+			*ptr++ = center + radius * vec3( 0, 0, 1 );
+			for( int j = 1; j < mNumSegments; ++j ) {
+				vec3 v = center + radius * vec3( glm::sin( j * step ), 0, glm::cos( j * step ) );
+				*ptr++ = v;
+				*ptr++ = v;
+			}
+			*ptr++ = center + radius * vec3( 0, 0, 1 );
+		}
+	}
+
+	if( mSubdivisionsAxis > 1 ) {
+		float angle = float( 2.0 * M_PI / mSubdivisionsAxis );
+		float step = float( 2.0 * M_PI / mNumSegments );
+		for( int i = 0; i < mSubdivisionsAxis; ++i ) {
+			float radius = mRadiusMinor;
+			float c = glm::cos( i * angle );
+			float s = glm::sin( i * angle );
+			vec3 center = mCenter + vec3( radius * c, 0, radius * s );
+
+			radius = ( mRadiusMajor - mRadiusMinor );
+			*ptr++ = center + vec3( radius * c, 0, radius * s );
+			for( int j = 1; j < mNumSegments; ++j ) {
+				vec3 v = center + radius * vec3( glm::cos( j * step ) * c, glm::sin( j * step ), glm::cos( j * step ) * s );
+				*ptr++ = v;
+				*ptr++ = v;
+			}
+			*ptr++ = center + vec3( radius * c, 0, radius * s );
+		}
+	}
+
+	target->copyAttrib( Attrib::POSITION, 3, 0, (const float*) positions.data(), numVertices );
+}
 
 ///////////////////////////////////////////////////////////////////////////////////////
 // VertexNormalLines
@@ -3433,7 +3910,7 @@ void SourceModsContext::loadInto( Target *target, const AttribSet &requestedAttr
 			target->copyAttrib( attrib, attribInfo.getDims(), attribInfo.getStride(), mAttribData[attrib].get(), mAttribCount[attrib] );
 		}
 
-		target->copyIndices( mPrimitive, mIndices.get(), mNumIndices, 4 );
+		target->copyIndices( mPrimitive, mIndices.get(), mNumIndices, calcIndicesRequiredBytes( mNumIndices ) );
 	}
 	else {
 		// no modifiers; in this case just call loadInto()
@@ -3520,11 +3997,11 @@ void SourceModsContext::copyAttrib( Attrib attr, uint8_t dims, size_t strideByte
 		mAttribCount[attr] = count;
 		// oddly elaborate logic necessary to replace set contents w/o a default-constructible type
 		// equivalent to mAttribInfo[attr] = AttribInfo( ... )
-		auto it = mAttribInfo.insert( make_pair( attr, AttribInfo( attr, dims, strideBytes, (size_t)0 ) ) ).first;
-		it->second = AttribInfo( attr, dims, strideBytes, (size_t)0 ); // only necessary if the key already exists
+		auto it = mAttribInfo.insert( make_pair( attr, AttribInfo( attr, dims, dims * sizeof(float), (size_t)0 ) ) ).first;
+		it->second = AttribInfo( attr, dims, dims * sizeof(float), (size_t)0 ); // only necessary if the key already exists
 	}
 	
-	copyData( dims, srcData, count, dims, 0, mAttribData.at( attr ).get() );
+	copyData( dims, strideBytes, srcData, count, dims, 0, mAttribData.at( attr ).get() );
 }
 
 void SourceModsContext::appendAttrib( Attrib attr, uint8_t dims, const float *srcData, size_t count )
@@ -3555,9 +4032,10 @@ void SourceModsContext::appendAttrib( Attrib attr, uint8_t dims, const float *sr
 	mNumVertices = existingCount + count;
 }
 
-void SourceModsContext::copyIndices( Primitive primitive, const uint32_t *source, size_t numIndices, uint8_t requiredBytesPerIndex )
+void SourceModsContext::copyIndices( Primitive primitive, const uint32_t *source, size_t numIndices, uint8_t requiredBytes )
 {
 	mPrimitive = primitive;
+	mIndicesRequiredBytes = requiredBytes;
 	// need to reallocate storage only if this is a different number of indices
 	if( mNumIndices != numIndices ) {
 		mNumIndices = numIndices;
@@ -3566,12 +4044,13 @@ void SourceModsContext::copyIndices( Primitive primitive, const uint32_t *source
 	memcpy( mIndices.get(), source, sizeof(uint32_t) * numIndices );
 }
 
-void SourceModsContext::appendIndices( Primitive primitive, const uint32_t *source, size_t numIndices )
+void SourceModsContext::appendIndices( Primitive primitive, const uint32_t *source, size_t numIndices, uint8_t requiredBytes )
 {
 	if( mPrimitive != primitive )
 		CI_LOG_E( "Primitive types don't match" );
 	
 	auto newIndices = unique_ptr<uint32_t[]>( new uint32_t[numIndices + mNumIndices] );
+	mIndicesRequiredBytes = std::max( mIndicesRequiredBytes, requiredBytes );
 
 	// copy old index data
 	if( mNumIndices && mIndices.get() )
