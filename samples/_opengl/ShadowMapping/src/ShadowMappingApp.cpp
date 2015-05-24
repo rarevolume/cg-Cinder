@@ -209,12 +209,12 @@ void ShadowMappingApp::setup()
 	mSphereShadowed = gl::Batch::create( sphere, mShadowShader );
 		
 	for ( size_t i = 0; i < 10; ++i ) {
-		vec3 v( 25.0f * randVec3f() );
+		vec3 v( 25.0f * randVec3() );
 		mat4 m{};
 		m *= translate( v );
 		m *= scale( vec3( 6 * ( randFloat() + 1.1f ) ) );
-		m *= rotate( 2 * glm::pi<float>() * randFloat(), randVec3f() );
-		mTransforms.emplace_back( m, randVec3f() );
+		m *= rotate( 2 * glm::pi<float>() * randFloat(), randVec3() );
+		mTransforms.emplace_back( m, randVec3() );
 	}
 	
 	gl::enableDepthRead();
@@ -330,7 +330,7 @@ void ShadowMappingApp::keyDown( KeyEvent event )
 	}
 }
 
-CINDER_APP( ShadowMappingApp, RendererGl, []( App::Settings *settings ) {
+CINDER_APP( ShadowMappingApp, RendererGl( RendererGl::Options().msaa( 16 ) ), []( App::Settings *settings ) {
 //	settings->enableHighDensityDisplay();
 	settings->setWindowSize( 900, 900 );
 } )

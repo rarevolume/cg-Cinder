@@ -74,7 +74,7 @@ void drawColorCube( const vec3 &center, const vec3 &size );
 //! Renders a stroked cube centered at \a center of size \a size.
 void drawStrokedCube( const vec3 &center, const vec3 &size );
 //! Renders a stroked cube using \a box as the guide for center and size.
-inline void drawStrokedCube( const ci::AxisAlignedBox3f &box ) { drawStrokedCube( box.getCenter(), box.getSize() ); }
+inline void drawStrokedCube( const ci::AxisAlignedBox &box ) { drawStrokedCube( box.getCenter(), box.getSize() ); }
 //! Renders a solid sphere at \a center of radius \a radius, subdivided on both longitude and latitude into \a subdivisions.
 void drawSphere( const vec3 &center, float radius, int subdivisions = -1 );
 //! Draws a textured quad of size \a scale that is aligned with the vectors \a bbRight and \a bbUp at \a pos, rotated by \a rotationRadians around the vector orthogonal to \a bbRight and \a bbUp.
@@ -91,6 +91,8 @@ void drawLine( const vec2 &a, const vec2 &b );
 
 //! Draws \a texture on the XY-plane
 void drawSolidRect( const Rectf &r, const vec2 &upperLeftTexCoord = vec2( 0, 1 ), const vec2 &lowerRightTexCoord = vec2( 1, 0 ) );
+//! Draws a solid rounded rectangle centered around \a rect, with a corner radius of \a cornerRadius
+void drawSolidRoundedRect( const Rectf &r, float cornerRadius, int numSegmentsPerCorner = 0,  const vec2 &upperLeftTexCoord = vec2( 0, 1 ), const vec2 &lowerRightTexCoord = vec2( 1, 0 ) );
 //! Draws a filled circle centered around \a center with a radius of \a radius
 void drawSolidCircle( const vec2 &center, float radius, int numSegments = -1 );
 //! Draws a filled ellipse centered around \a center with an X-axis radius of \a radiusX and a Y-axis radius of \a radiusY
@@ -100,6 +102,8 @@ void drawSolidEllipse( const vec2 &center, float radiusX, float radiusY, int num
 void drawStrokedRect( const Rectf &rect );
 //! Draws a stroked rectangle centered around \a rect, with a line width of \a lineWidth
 void drawStrokedRect( const Rectf &rect, float lineWidth );
+//! Draws a stroked rounded rectangle centered around \a rect, with a corner radius of \a cornerRadius
+void drawStrokedRoundedRect( const Rectf &rect, float cornerRadius, int numSegmentsPerCorner = 0 );
 //! Draws a stroked circle centered around \a center with a radius of \a radius
 void drawStrokedCircle( const vec2 &center, float radius, int numSegments = -1 );
 //! Draws a stroked ellipse centered around \a center with an X-axis radius of \a radiusX and a Y-axis radius of \a radiusY
