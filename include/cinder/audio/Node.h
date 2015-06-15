@@ -25,8 +25,8 @@
 
 #include "cinder/audio/Buffer.h"
 #include "cinder/audio/Exception.h"
+#include "cinder/Noncopyable.h"
 
-#include <boost/noncopyable.hpp>
 #include <boost/logic/tribool.hpp>
 
 #include <memory>
@@ -56,7 +56,7 @@ typedef std::shared_ptr<class Node>				NodeRef;
 //! initialize() is called, uninitialize() is called before a Node is deallocated or channel counts change.
 //!
 //! \see InputNode, OutputNode, EffectNode
-class Node : public std::enable_shared_from_this<Node>, public boost::noncopyable {
+class Node : public std::enable_shared_from_this<Node>, private Noncopyable {
   public:
 	//! Used to specifiy how the corresponding channels are to be resolved between two connected Node's,
 	//! based on either a Node's input (the default), it's output, or specified by user.
@@ -98,10 +98,16 @@ class Node : public std::enable_shared_from_this<Node>, public boost::noncopyabl
 
 	//! Enables this Node for processing. Same as `setEnabled( true )`.
 	void enable();
+	//! Enables this Node for processing at \a when seconds, measured against Context::getNumProcessedSeconds(). Same as `setEnabled( true, when )`.
+	void enable( double when );
 	//! Disables this Node for processing. Same as `setEnabled( false )`.
 	void disable();
+	//! Disables this Node for processing at \a when seconds, measured against Context::getNumProcessedSeconds(). Same as `setEnabled( false, when )`.
+	void disable( double when );
 	//! Sets whether this Node is enabled for processing or not.
-	void setEnabled( bool b = true );
+	void setEnabled( bool b );
+	//! Sets whether this Node is enabled for processing or not at \a when seconds, measured against Context::getNumProcessedSeconds().
+	void setEnabled( bool b, double when );
 	//! Returns whether this Node is enabled for processing or not.
 	bool isEnabled() const						{ return mEnabled; }
 
@@ -203,6 +209,12 @@ class Node : public std::enable_shared_from_this<Node>, public boost::noncopyabl
 	//! Only Node subclasses can specify channel mode directly - users specify via Format at construction time.
 	void setChannelMode( ChannelMode mode );
 
+	//! \brief Returns a pair of frame indices for Nodes that wish to support sample accurate enable and disable.
+	//!
+	//! The first index is where processing should start, the second is where it should	end. Should only be called on the audio thread from within a Node's process() method.
+	//! Unless scheduled (with Context::schedule()), this will be [0, getFramesPerBlock()]
+	const std::pair<size_t, size_t>& getProcessFramesRange() const	{ return mProcessFramesRange; }
+
 	void initializeImpl();
 	void uninitializeImpl();
 
@@ -220,6 +232,9 @@ class Node : public std::enable_shared_from_this<Node>, public boost::noncopyabl
 	bool					mProcessInPlace;
 	ChannelMode				mChannelMode;
 	size_t					mNumChannels;
+
+	std::pair<size_t, size_t>	mProcessFramesRange;
+
 	uint64_t				mLastProcessedFrame;
 	std::string				mName;
 	BufferDynamic			mInternalBuffer, mSummingBuffer;
@@ -243,11 +258,11 @@ class NodeAutoPullable : public Node {
   public:
 	virtual ~NodeAutoPullable();
 
-	virtual void connect( const NodeRef &output )					override;
-	virtual void connectInput( const NodeRef &input )				override;
-	virtual void disconnectInput( const NodeRef &input )			override;
+	void connect( const NodeRef &output )					override;
+	void connectInput( const NodeRef &input )				override;
+	void disconnectInput( const NodeRef &input )			override;
 	//! Overridden to also remove from  Context's auto-pulled list
-	virtual void disconnectAllOutputs()								override;
+	void disconnectAllOutputs()								override;
 
   protected:
 	NodeAutoPullable( const Format &format );

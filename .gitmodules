@@ -4,15 +4,7 @@
 [submodule "tools/TinderBox-Win"]
 	path = tools/TinderBox-Win
 	url = git://github.com/cinder/TinderBox-Win.git
-[submodule "boost"]
-	path = boost
+[submodule "include/boost"]
+	path = include/boost
 	url = git://github.com/cinder/Cinder-Boost.git
-[submodule "blocks/Cinder-AvfImpl"]
-	path = blocks/Cinder-AvfImpl
-	url = git@github.com:calebjohnston/Cinder-AvfImpl.git
-[submodule "blocks/Cinder-GTest"]
-	path = blocks/Cinder-GTest
-	url = git@github.com:calebjohnston/Cinder-GTest.git
-[submodule "blocks/CinderFx"]
-	path = blocks/CinderFx
-	url = git@github.com:controlgroup/CinderFx.git
+	branch = boost_1_58

@@ -24,7 +24,7 @@
 #include "cinder/audio/msw/FileMediaFoundation.h"
 #include "cinder/audio/dsp/Converter.h"
 #include "cinder/audio/Exception.h"
-#include "cinder/audio/Debug.h"
+#include "cinder/Log.h"
 
 #include <mfidl.h>
 #include <mfapi.h>
@@ -99,8 +99,7 @@ SourceFileMediaFoundation::SourceFileMediaFoundation( const DataSourceRef &dataS
 
 SourceFileRef SourceFileMediaFoundation::cloneWithSampleRate( size_t sampleRate ) const
 {
-	shared_ptr<SourceFileMediaFoundation> result( new SourceFileMediaFoundation );
-	result->mDataSource = mDataSource;
+	auto result = make_shared<SourceFileMediaFoundation>( mDataSource, sampleRate );
 	result->initReader();
 	result->setupSampleRateConversion();
 
@@ -120,7 +119,7 @@ size_t SourceFileMediaFoundation::performRead( Buffer *buffer, size_t bufferFram
 
 		// first drain any frames that were previously read from an IMFSample
 		if( mFramesRemainingInReadBuffer ) {
-			size_t remainingToDrain = min( mFramesRemainingInReadBuffer, numFramesNeeded );
+			size_t remainingToDrain = std::min( mFramesRemainingInReadBuffer, numFramesNeeded );
 
 			// TODO: use Buffer::copyChannel
 			for( size_t ch = 0; ch < mNumChannels; ch++ ) {

@@ -23,11 +23,11 @@
 
 #include "cinder/audio/Context.h"
 #include "cinder/audio/InputNode.h"
+#include "cinder/audio/Utilities.h"
 #include "cinder/audio/dsp/Converter.h"
-#include "cinder/audio/Debug.h"
 
 #include "cinder/Cinder.h"
-#include "cinder/app/App.h"
+#include "cinder/app/AppBase.h"
 
 #include <sstream>
 
@@ -51,18 +51,18 @@ namespace cinder { namespace audio {
 std::shared_ptr<Context>		Context::sMasterContext;
 std::unique_ptr<DeviceManager>	Context::sDeviceManager;
 
-bool sIsRegisteredForShutdown = false;
+bool sIsRegisteredForCleanup = false;
 
 // static
 void Context::registerClearStatics()
 {
-	sIsRegisteredForShutdown = true;
+	sIsRegisteredForCleanup = true;
 
-	// A signal is registered for app shutdown in order to ensure that all Node's and their
-	// dependencies are destroyed before static memory goes down - this avoids a crash at shutdown
+	// A signal is registered for app cleanup in order to ensure that all Node's and their
+	// dependencies are destroyed before static memory goes down - this avoids a crash at cleanup
 	// in r8brain's static processing containers.
 	// TODO: consider leaking the master context by default and providing a public clear function.
-	app::App::get()->getSignalShutdown().connect( [] {
+	app::AppBase::get()->getSignalCleanup().connect( [] {
 		sDeviceManager.reset();
 		sMasterContext.reset();
 	} );
@@ -81,7 +81,7 @@ Context* Context::master()
 		sMasterContext.reset( new msw::ContextXAudio() );
 	#endif
 #endif
-		if( ! sIsRegisteredForShutdown )
+		if( ! sIsRegisteredForCleanup )
 			registerClearStatics();
 	}
 	return sMasterContext.get();
@@ -102,7 +102,7 @@ DeviceManager* Context::deviceManager()
 	//	CI_ASSERT( 0 && "TODO: simple DeviceManagerXp" );
 	#endif
 #endif
-		if( ! sIsRegisteredForShutdown )
+		if( ! sIsRegisteredForCleanup )
 			registerClearStatics();
 	}
 	return sDeviceManager.get();
@@ -269,9 +269,35 @@ void Context::removeAutoPulledNode( const NodeRef &node )
 		mAutoPullRequired = false;
 }
 
+void Context::schedule( double when, const NodeRef &node, bool enable, const std::function<void ()> &func )
+{
+	const uint64_t framesPerBlock = (uint64_t)getFramesPerBlock();
+	uint64_t eventFrameThreshold = timeToFrame( when, getSampleRate() );
+
+	// Place the threshold back one block so we can process the block first, guarding against wrap around
+	if( eventFrameThreshold >= framesPerBlock )
+		eventFrameThreshold -= framesPerBlock;
+
+	lock_guard<mutex> lock( mMutex );
+	mScheduledEvents.push_back( ScheduledEvent( eventFrameThreshold, node, enable, func ) );
+}
+
+bool Context::isAudioThread() const
+{
+	return mAudioThreadId == std::this_thread::get_id();
+}
+
+void Context::preProcess()
+{
+	mAudioThreadId = std::this_thread::get_id();
+
+	preProcessScheduledEvents();
+}
+
 void Context::postProcess()
 {
 	processAutoPulledNodes();
+	postProcessScheduledEvents();
 	incrementFrameCount();
 }
 
@@ -279,6 +305,7 @@ void Context::incrementFrameCount()
 {
 	mNumProcessedFrames += getFramesPerBlock();
 }
+
 void Context::processAutoPulledNodes()
 {
 	if( ! mAutoPullRequired )
@@ -289,6 +316,47 @@ void Context::processAutoPulledNodes()
 		node->pullInputs( &mAutoPullBuffer );
 		if( ! node->getProcessesInPlace() )
 			dsp::mixBuffers( node->getInternalBuffer(), &mAutoPullBuffer );
+	}
+}
+
+void Context::preProcessScheduledEvents()
+{
+	const uint64_t framesPerBlock = (uint64_t)getFramesPerBlock();
+	const uint64_t numProcessedFrames = mNumProcessedFrames;
+
+	for( auto &event : mScheduledEvents ) {
+		if( numProcessedFrames >= event.mEventFrameThreshold ) {
+			uint64_t frameOffset = numProcessedFrames - event.mEventFrameThreshold;
+			if( event.mEnable ) {
+				event.mNode->mProcessFramesRange.first = size_t( framesPerBlock - frameOffset );
+				event.mFunc();
+			}
+			else {
+				// set the process range but don't call its function until postProcess() (which should be disable()'ing the Node)
+				event.mNode->mProcessFramesRange.second = (size_t)frameOffset;
+			}
+
+			event.mFinished = true;
+		}
+	}
+}
+
+void Context::postProcessScheduledEvents()
+{
+	for( auto eventIt = mScheduledEvents.begin(); eventIt != mScheduledEvents.end(); /* */ ) {
+		if( eventIt->mFinished ) {
+			if( ! eventIt->mEnable )
+				eventIt->mFunc();
+
+			// reset process frame range
+			auto &range = eventIt->mNode->mProcessFramesRange;
+			range.first = 0;
+			range.second = getFramesPerBlock();
+
+			eventIt = mScheduledEvents.erase( eventIt );
+		}
+		else
+			++eventIt;
 	}
 }
 

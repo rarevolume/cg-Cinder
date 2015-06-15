@@ -27,7 +27,6 @@
 #include "cinder/audio/Context.h"
 #include "cinder/audio/dsp/Dsp.h"
 #include "cinder/audio/dsp/Converter.h"
-#include "cinder/audio/Debug.h"
 #include "cinder/CinderAssert.h"
 #include "cinder/System.h"
 
@@ -64,7 +63,7 @@ void Node::connect( const NodeRef &output )
 	// disconnecting us, which we may need later anyway
 	NodeRef thisRef = shared_from_this();
 
-	if( ! output->canConnectToInput( thisRef ) )
+	if( ! output || ! output->canConnectToInput( thisRef ) )
 		return;
 
 	if( checkCycle( thisRef, output ) )
@@ -120,7 +119,11 @@ void Node::disconnectAllInputs()
 
 void Node::connectInput( const NodeRef &input )
 {
-	lock_guard<mutex> lock( getContext()->getMutex() );
+	auto ctx = getContext();
+	if( ! ctx )
+		return;
+
+	lock_guard<mutex> lock( ctx->getMutex() );
 
 	mInputs.insert( input );
 	configureConnections();
@@ -128,7 +131,11 @@ void Node::connectInput( const NodeRef &input )
 
 void Node::disconnectInput( const NodeRef &input )
 {
-	lock_guard<mutex> lock( getContext()->getMutex() );
+	auto ctx = getContext();
+	if( ! ctx )
+		return;
+
+	lock_guard<mutex> lock( ctx->getMutex() );
 
 	for( auto inIt = mInputs.begin(); inIt != mInputs.end(); ++inIt ) {
 		if( *inIt == input ) {
@@ -140,7 +147,11 @@ void Node::disconnectInput( const NodeRef &input )
 
 void Node::disconnectOutput( const NodeRef &output )
 {
-	lock_guard<mutex> lock( getContext()->getMutex() );
+	auto ctx = getContext();
+	if( ! ctx )
+		return;
+
+	lock_guard<mutex> lock( ctx->getMutex() );
 
 	for( auto outIt = mOutputs.begin(); outIt != mOutputs.end(); ++outIt ) {
 		if( outIt->lock() == output ) {
@@ -183,12 +194,31 @@ void Node::disable()
 	disableProcessing();
 }
 
+void Node::enable( double when )
+{
+	getContext()->schedule( when, shared_from_this(), true, [this] { enable(); } );
+}
+
+void Node::disable( double when )
+{
+	getContext()->schedule( when, shared_from_this(), false, [this] { disable(); } );
+}
+
 void Node::setEnabled( bool b )
 {
 	if( b )
 		enable();
 	else
 		disable();
+}
+
+
+void Node::setEnabled( bool b, double when )
+{
+	if( b )
+		enable( when );
+	else
+		disable( when );
 }
 
 size_t Node::getNumConnectedInputs() const
@@ -224,6 +254,9 @@ void Node::initializeImpl()
 
 	if( mProcessInPlace && ! supportsProcessInPlace() )
 		setupProcessWithSumming();
+
+	mProcessFramesRange.first = 0;
+	mProcessFramesRange.second = getFramesPerBlock();
 
 	initialize();
 	mInitialized = true;
@@ -372,11 +405,11 @@ void Node::pullInputs( Buffer *inPlaceBuffer )
 
 	if( mProcessInPlace ) {
 		if( mInputs.empty() ) {
-			// Fastest route: no inputs and process in-place. If disabled, get rid of any previously processsed samples.
+			// Fastest route: no inputs and process in-place. inPlaceBuffer must be cleared so that samples left over
+			// from InputNode's that aren't filling the entire buffer are zero.
+			inPlaceBuffer->zero();
 			if( mEnabled )
 				process( inPlaceBuffer );
-			else
-				inPlaceBuffer->zero();
 		}
 		else {
 			// First pull the input (can only be one when in-place), then run process() if input did any processing.
@@ -449,7 +482,11 @@ bool Node::checkCycle( const NodeRef &sourceNode, const NodeRef &destNode ) cons
 
 void Node::notifyConnectionsDidChange()
 {
-	getContext()->connectionsDidChange( shared_from_this() );
+	auto ctx = getContext();
+	if( ! ctx )
+		return;
+
+	ctx->connectionsDidChange( shared_from_this() );
 }
 
 bool Node::canConnectToInput( const NodeRef &input )

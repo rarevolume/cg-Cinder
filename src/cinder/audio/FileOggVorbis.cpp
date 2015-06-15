@@ -24,7 +24,6 @@
 #include "cinder/audio/FileOggVorbis.h"
 #include "cinder/audio/dsp/Converter.h"
 #include "cinder/audio/Exception.h"
-#include "cinder/audio/Debug.h"
 
 #include <sstream>
 
@@ -46,14 +45,9 @@ SourceFileOggVorbis::SourceFileOggVorbis( const DataSourceRef &dataSource, size_
 SourceFileRef SourceFileOggVorbis::cloneWithSampleRate( size_t sampleRate ) const
 {
 	auto result = make_shared<SourceFileOggVorbis>( mDataSource, sampleRate );
-	result->setupConversionImpl();
+	result->setupSampleRateConversion();
 
 	return result;
-}
-
-void SourceFileOggVorbis::setupConversionImpl()
-{
-	setupSampleRateConversion();
 }
 
 SourceFileOggVorbis::~SourceFileOggVorbis()

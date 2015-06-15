@@ -1,7 +1,8 @@
-#include "cinder/app/AppNative.h"
-#include "cinder/gl/gl.h"
+#include "cinder/app/App.h"
+#include "cinder/app/RendererGl.h"
 #include "cinder/Timeline.h"
 #include "cinder/Timer.h"
+#include "cinder/Log.h"
 
 #include "cinder/audio/Source.h"
 #include "cinder/audio/Target.h"
@@ -10,7 +11,6 @@
 #include "cinder/audio/SampleRecorderNode.h"
 #include "cinder/audio/NodeEffects.h"
 #include "cinder/audio/MonitorNode.h"
-#include "cinder/audio/Debug.h"
 
 #include "Resources.h"
 
@@ -18,37 +18,39 @@
 #include "../../../../samples/_audio/common/AudioDrawUtils.h"
 
 //#define INITIAL_AUDIO_RES	RES_TONE440_WAV
-//#define INITIAL_AUDIO_RES	RES_TONE440L220R_WAV
-#define INITIAL_AUDIO_RES RES_TONE440_LOOP_WAV
+#define INITIAL_AUDIO_RES	RES_TONE440L220R_WAV
+//#define INITIAL_AUDIO_RES RES_TONE440_LOOP_WAV
 //#define INITIAL_AUDIO_RES	RES_TONE440_MP3
 //#define INITIAL_AUDIO_RES	RES_TONE440L220R_MP3
 //#define INITIAL_AUDIO_RES	RES_TONE440_OGG
 //#define INITIAL_AUDIO_RES	RES_TONE440L220R_OGG
+
+#define TEST_STEREO_INPUT_PANNING 0
 
 using namespace ci;
 using namespace ci::app;
 using namespace std;
 
 
-class SamplePlayerNodeTestApp : public AppNative {
+class SamplePlayerNodeTestApp : public App {
   public:
-	void prepareSettings( Settings *settings );
-	void setup();
-	void mouseDown( MouseEvent event );
-	void keyDown( KeyEvent event );
-	void fileDrop( FileDropEvent event );
-	void update();
-	void draw();
+	void setup() override;
+	void mouseDown( MouseEvent event ) override;
+	void keyDown( KeyEvent event ) override;
+	void fileDrop( FileDropEvent event ) override;
+	void update() override;
+	void draw() override;
 
 	void setupBufferPlayerNode();
 	void setupFilePlayerNode();
 	void setupBufferRecorderNode();
 	void setSourceFile( const DataSourceRef &dataSource );
 	void writeRecordedToFile();
+	void triggerStartStop( bool start );
 
 	void setupUI();
-	void processDrag( Vec2i pos );
-	void processTap( Vec2i pos );
+	void processDrag( ivec2 pos );
+	void processTap( ivec2 pos );
 
 	void seek( size_t xPos );
 	void printBufferSamples( size_t xPos );
@@ -60,26 +62,21 @@ class SamplePlayerNodeTestApp : public AppNative {
 	audio::SamplePlayerNodeRef		mSamplePlayerNode;
 	audio::SourceFileRef			mSourceFile;
 	audio::MonitorNodeRef			mMonitor;
-	audio::GainNodeRef					mGain;
+	audio::GainNodeRef				mGain;
 	audio::Pan2dNodeRef				mPan;
-	audio::BufferRecorderNodeRef		mRecorder;
+	audio::BufferRecorderNodeRef	mRecorder;
 
 	WaveformPlot				mWaveformPlot;
 	vector<TestWidget *>		mWidgets;
-	Button						mEnableSamplePlayerNodeButton, mStartPlaybackButton, mLoopButton, mAsyncButton, mRecordButton, mWriteButton, mAutoResizeButton;
+	Button						mEnableSamplePlayerNodeButton, mStartPlaybackButton, mStopPlaybackButton, mLoopButton, mAsyncButton, mRecordButton, mWriteButton, mAutoResizeButton;
 	VSelector					mTestSelector;
-	HSlider						mGainSlider, mPanSlider, mLoopBeginSlider, mLoopEndSlider;
+	HSlider						mGainSlider, mPanSlider, mLoopBeginSlider, mLoopEndSlider, mTriggerDelaySlider;
 
 	Anim<float>					mUnderrunFade, mOverrunFade, mRecorderOverrunFade;
 	Rectf						mUnderrunRect, mOverrunRect, mRecorderOverrunRect;
 	bool						mSamplePlayerNodeEnabledState;
 	std::future<void>			mAsyncLoadFuture;
 };
-
-void SamplePlayerNodeTestApp::prepareSettings( Settings *settings )
-{
-    settings->setWindowSize( 1000, 500 );
-}
 
 void SamplePlayerNodeTestApp::setup()
 {
@@ -93,7 +90,9 @@ void SamplePlayerNodeTestApp::setup()
 	auto ctx = audio::master();
 
 	mPan = ctx->makeNode( new audio::Pan2dNode() );
-//	mPan->setStereoInputModeEnabled( false );
+#if TEST_STEREO_INPUT_PANNING
+	mPan->setStereoInputModeEnabled( true );
+#endif
 
 	mGain = ctx->makeNode( new audio::GainNode() );
 	mGain->setValue( 0.6f );
@@ -216,24 +215,51 @@ void SamplePlayerNodeTestApp::writeRecordedToFile()
 	CI_LOG_V( "...complete." );
 }
 
+void SamplePlayerNodeTestApp::triggerStartStop( bool start )
+{
+	float delaySeconds = mTriggerDelaySlider.mValueScaled;
+	if( delaySeconds <= 0.001f ) {
+		if( start )
+			mSamplePlayerNode->start();
+		else
+			mSamplePlayerNode->stop();
+	}
+	else {
+		CI_LOG_V( "scheduling " << ( start ? "start" : "stop" ) << " with delay: " << delaySeconds
+				 << "\n\tprocessed frames: " << audio::master()->getNumProcessedFrames() << ", seconds: " << audio::master()->getNumProcessedSeconds() );
+
+		double when = audio::master()->getNumProcessedSeconds() + delaySeconds;
+		if( start )
+			mSamplePlayerNode->start( when );
+		else
+			mSamplePlayerNode->stop( when );
+	}
+}
+
 void SamplePlayerNodeTestApp::setupUI()
 {
-	const float padding = 10.0f;
+	const float padding = 6.0f;
 
-	auto buttonRect = Rectf( padding, padding, 200, 60 );
+	auto buttonRect = Rectf( padding, padding, 160, 50 );
 	mEnableSamplePlayerNodeButton.mIsToggle = true;
 	mEnableSamplePlayerNodeButton.mTitleNormal = "player off";
 	mEnableSamplePlayerNodeButton.mTitleEnabled = "player on";
 	mEnableSamplePlayerNodeButton.mBounds = buttonRect;
 	mWidgets.push_back( &mEnableSamplePlayerNodeButton );
 
-	buttonRect += Vec2f( buttonRect.getWidth() + padding, 0 );
+	buttonRect += vec2( buttonRect.getWidth() + padding, 0 );
 	mStartPlaybackButton.mIsToggle = false;
 	mStartPlaybackButton.mTitleNormal = "start";
 	mStartPlaybackButton.mBounds = buttonRect;
 	mWidgets.push_back( &mStartPlaybackButton );
 
-	buttonRect += Vec2f( buttonRect.getWidth() + padding, 0 );
+	buttonRect += vec2( buttonRect.getWidth() + padding, 0 );
+	mStopPlaybackButton.mIsToggle = false;
+	mStopPlaybackButton.mTitleNormal = "stop";
+	mStopPlaybackButton.mBounds = buttonRect;
+	mWidgets.push_back( &mStopPlaybackButton );
+
+	buttonRect += vec2( buttonRect.getWidth() + padding, 0 );
 	buttonRect.x2 -= 30;
 	mLoopButton.mIsToggle = true;
 	mLoopButton.mTitleNormal = "loop off";
@@ -242,7 +268,7 @@ void SamplePlayerNodeTestApp::setupUI()
 	mLoopButton.mBounds = buttonRect;
 	mWidgets.push_back( &mLoopButton );
 
-	buttonRect += Vec2f( buttonRect.getWidth() + padding, 0 );
+	buttonRect += vec2( buttonRect.getWidth() + padding, 0 );
 	mAsyncButton.mIsToggle = true;
 	mAsyncButton.mTitleNormal = "async off";
 	mAsyncButton.mTitleEnabled = "async on";
@@ -256,20 +282,20 @@ void SamplePlayerNodeTestApp::setupUI()
 	mRecordButton.mBounds = buttonRect;
 	mWidgets.push_back( &mRecordButton );
 
-	buttonRect += Vec2f( buttonRect.getWidth() + padding, 0 );
+	buttonRect += vec2( buttonRect.getWidth() + padding, 0 );
 	mWriteButton.mIsToggle = false;
 	mWriteButton.mTitleNormal = "write to file";
 	mWriteButton.mBounds = buttonRect;
 	mWidgets.push_back( &mWriteButton );
 
-	buttonRect += Vec2f( buttonRect.getWidth() + padding, 0 );
+	buttonRect += vec2( buttonRect.getWidth() + padding, 0 );
 	mAutoResizeButton.mIsToggle = true;
 	mAutoResizeButton.mTitleNormal = "auto resize off";
 	mAutoResizeButton.mTitleEnabled = "auto resize on";
 	mAutoResizeButton.mBounds = buttonRect;
 	mWidgets.push_back( &mAutoResizeButton );
 
-	Vec2f sliderSize( 200, 30 );
+	vec2 sliderSize( 200, 30 );
 	Rectf selectorRect( getWindowWidth() - sliderSize.x - padding, padding, getWindowWidth() - padding, sliderSize.y * 3 + padding );
 	mTestSelector.mSegments.push_back( "BufferPlayerNode" );
 	mTestSelector.mSegments.push_back( "FilePlayerNode" );
@@ -278,36 +304,43 @@ void SamplePlayerNodeTestApp::setupUI()
 	mWidgets.push_back( &mTestSelector );
 
 	Rectf sliderRect( selectorRect.x1, selectorRect.y2 + padding, selectorRect.x2, selectorRect.y2 + padding + sliderSize.y );
-//	Rectf sliderRect( getWindowWidth() - 200.0f, kPadding, getWindowWidth(), 50.0f );
 	mGainSlider.mBounds = sliderRect;
 	mGainSlider.mTitle = "GainNode";
 	mGainSlider.set( mGain->getValue() );
 	mWidgets.push_back( &mGainSlider );
 
-	sliderRect += Vec2f( 0, sliderRect.getHeight() + padding );
+	sliderRect += vec2( 0, sliderRect.getHeight() + padding );
 	mPanSlider.mBounds = sliderRect;
 	mPanSlider.mTitle = "Pan";
 	mPanSlider.set( mPan->getPos() );
 	mWidgets.push_back( &mPanSlider );
 
-	sliderRect += Vec2f( 0, sliderRect.getHeight() + padding );
+	sliderRect += vec2( 0, sliderRect.getHeight() + padding );
 	mLoopBeginSlider.mBounds = sliderRect;
 	mLoopBeginSlider.mTitle = "Loop Begin";
 	mLoopBeginSlider.mMax = (float)mSamplePlayerNode->getNumSeconds();
 	mLoopBeginSlider.set( (float)mSamplePlayerNode->getLoopBeginTime() );
 	mWidgets.push_back( &mLoopBeginSlider );
 
-	sliderRect += Vec2f( 0, sliderRect.getHeight() + padding );
+	sliderRect += vec2( 0, sliderRect.getHeight() + padding );
 	mLoopEndSlider.mBounds = sliderRect;
 	mLoopEndSlider.mTitle = "Loop End";
 	mLoopEndSlider.mMax = (float)mSamplePlayerNode->getNumSeconds();
 	mLoopEndSlider.set( (float)mSamplePlayerNode->getLoopEndTime() );
 	mWidgets.push_back( &mLoopEndSlider );
 
-	Vec2f xrunSize( 80, 26 );
+	sliderRect += vec2( 0, sliderRect.getHeight() + padding );
+	mTriggerDelaySlider.mBounds = sliderRect;
+	mTriggerDelaySlider.mTitle = "Trigger Delay";
+	mTriggerDelaySlider.mMin = 0.0f; // TODO: test negative numbers don't blow up
+	mTriggerDelaySlider.mMax = 5.0f;
+	mTriggerDelaySlider.set( 0 );
+	mWidgets.push_back( &mTriggerDelaySlider );
+
+	vec2 xrunSize( 80, 26 );
 	mUnderrunRect = Rectf( padding, getWindowHeight() - xrunSize.y - padding, xrunSize.x + padding, getWindowHeight() - padding );
-	mOverrunRect = mUnderrunRect + Vec2f( xrunSize.x + padding, 0 );
-	mRecorderOverrunRect = mOverrunRect + Vec2f( xrunSize.x + padding, 0 );
+	mOverrunRect = mUnderrunRect + vec2( xrunSize.x + padding, 0 );
+	mRecorderOverrunRect = mOverrunRect + vec2( xrunSize.x + padding, 0 );
 
 	getWindow()->getSignalMouseDown().connect( [this] ( MouseEvent &event ) { processTap( event.getPos() ); } );
 	getWindow()->getSignalMouseDrag().connect( [this] ( MouseEvent &event ) { processDrag( event.getPos() ); } );
@@ -320,26 +353,35 @@ void SamplePlayerNodeTestApp::setupUI()
 	gl::enableAlphaBlending();
 }
 
-void SamplePlayerNodeTestApp::processDrag( Vec2i pos )
+void SamplePlayerNodeTestApp::processDrag( ivec2 pos )
 {
 	if( mGainSlider.hitTest( pos ) )
 		mGain->setValue( mGainSlider.mValueScaled );
-	else if( mPanSlider.hitTest( pos ) )
+	else if( mPanSlider.hitTest( pos ) ) {
+#if TEST_STEREO_INPUT_PANNING
+		mPan->getParamPos()->applyRamp( mPanSlider.mValueScaled, 0.6f );
+#else
 		mPan->setPos( mPanSlider.mValueScaled );
+#endif
+	}
 	else if( mLoopBeginSlider.hitTest( pos ) )
 		mSamplePlayerNode->setLoopBeginTime( mLoopBeginSlider.mValueScaled );
 	else if( mLoopEndSlider.hitTest( pos ) )
 		mSamplePlayerNode->setLoopEndTime( mLoopEndSlider.mValueScaled );
+	else if( mTriggerDelaySlider.hitTest( pos ) ) {
+	}
 	else if( pos.y > getWindowCenter().y )
 		seek( pos.x );
 }
 
-void SamplePlayerNodeTestApp::processTap( Vec2i pos )
+void SamplePlayerNodeTestApp::processTap( ivec2 pos )
 {
 	if( mEnableSamplePlayerNodeButton.hitTest( pos ) )
 		mSamplePlayerNode->setEnabled( ! mSamplePlayerNode->isEnabled() );
 	else if( mStartPlaybackButton.hitTest( pos ) )
-		mSamplePlayerNode->start();
+		triggerStartStop( true );
+	else if( mStopPlaybackButton.hitTest( pos ) )
+		triggerStartStop( false );
 	else if( mLoopButton.hitTest( pos ) )
 		mSamplePlayerNode->setLoopEnabled( ! mSamplePlayerNode->isLoopEnabled() );
 	else if( mRecordButton.hitTest( pos ) ) {
@@ -393,7 +435,6 @@ void SamplePlayerNodeTestApp::printBufferSamples( size_t xPos )
 			console() << "[" << buffer->getChannel( 0 )[xScaled + i] << ", " << buffer->getChannel( 0 )[xScaled + i] << "], ";
 	}
 	console() << endl;
-
 }
 
 void SamplePlayerNodeTestApp::printSupportedExtensions()
@@ -465,7 +506,7 @@ void SamplePlayerNodeTestApp::update()
 	if( mSamplePlayerNodeEnabledState != mSamplePlayerNode->isEnabled() ) {
 		mSamplePlayerNodeEnabledState = mSamplePlayerNode->isEnabled();
 		string stateStr = mSamplePlayerNodeEnabledState ? "started" : "stopped";
-		CI_LOG_V( "mSamplePlayerNode " << stateStr << " at " << to_string( getElapsedSeconds() ) );
+		CI_LOG_V( "mSamplePlayerNode " << stateStr << " at " << getElapsedSeconds() << ", isEof: " << boolalpha << mSamplePlayerNode->isEof() << dec );
 	}
 
 	bool testIsRecorder = ( mTestSelector.currentSection() == "recorder" );
@@ -507,7 +548,7 @@ void SamplePlayerNodeTestApp::draw()
 
 		float readPos = (float)getWindowWidth() * mSamplePlayerNode->getReadPosition() / mSamplePlayerNode->getNumFrames();
 		gl::color( ColorA( 0, 1, 0, 0.7f ) );
-		gl::drawSolidRoundedRect( Rectf( readPos - 2, 0, readPos + 2, (float)getWindowHeight() ), 2 );
+		gl::drawSolidRect( Rectf( readPos - 2, 0, readPos + 2, (float)getWindowHeight() ) );
 	}
 
 	if( mUnderrunFade > 0.0001f ) {
@@ -598,4 +639,6 @@ void SamplePlayerNodeTestApp::testWrite()
 	}
 }
 
-CINDER_APP_NATIVE( SamplePlayerNodeTestApp, RendererGl )
+CINDER_APP( SamplePlayerNodeTestApp, RendererGl, []( App::Settings *settings ) {
+	settings->setWindowSize( 1000, 500 );
+} )

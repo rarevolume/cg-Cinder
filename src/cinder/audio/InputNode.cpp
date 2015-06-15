@@ -24,7 +24,6 @@
 #include "cinder/audio/InputNode.h"
 #include "cinder/audio/Context.h"
 
-using namespace ci;
 using namespace std;
 
 namespace cinder { namespace audio {
@@ -36,8 +35,7 @@ namespace cinder { namespace audio {
 InputNode::InputNode( const Format &format )
 	: Node( format )
 {
-	// InputNode's don't have inputs, so make the default match outputs
-	if( getChannelMode() == ChannelMode::MATCHES_INPUT )
+	if( getChannelMode() != ChannelMode::SPECIFIED )
 		setChannelMode( ChannelMode::MATCHES_OUTPUT );
 
 	if( boost::indeterminate( format.getAutoEnable() ) )

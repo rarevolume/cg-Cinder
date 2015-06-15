@@ -28,6 +28,7 @@
 #include <list>
 #include <atomic>
 #include <functional>
+#include <string>
 
 namespace cinder { namespace audio {
 
@@ -36,41 +37,51 @@ typedef std::shared_ptr<class Node>			NodeRef;
 
 //! A Reference to Event's returned by the ramping methods. \see applyRamp() \see appendRamp()
 typedef std::shared_ptr<class Event>			EventRef;
-//! note: unless we want to add _VARIADIC_MAX=6 in preprocessor definitions to all projects, number of args here has to be 5 or less for vc11 support
-typedef std::function<void ( float *, size_t, float, float, const std::pair<float, float>& )>	RampFn;
+//! Ramping function that determines the curvature of a ramp.
+typedef std::function<void ( float *, size_t, double, double, float, float )>	RampFn;
 
 //! Array-based linear ramping function.
-void rampLinear( float *array, size_t count, float t, float tIncr, const std::pair<float, float> &valueRange );
+void rampLinear( float *array, size_t count, double t, double tIncr, float valueBegin, float valueEnd );
 //! Array-based quadradic (t^2) ease-in ramping function.
-void rampInQuad( float *array, size_t count, float t, float tIncr, const std::pair<float, float> &valueRange );
+void rampInQuad( float *array, size_t count, double t, double tIncr, float valueBegin, float valueEnd );
 //! Array-based quadradic (t^2) ease-out ramping function.
-void rampOutQuad( float *array, size_t count, float t, float tIncr, const std::pair<float, float> &valueRange );
+void rampOutQuad( float *array, size_t count, double t, double tIncr, float valueBegin, float valueEnd );
 
 //! Class representing a sample-accurate parameter control instruction. \see Param::applyRamp(), Param::appendRamp()
 class Event {
   public:
-	float getTimeBegin()		const	{ return mTimeBegin; }
-	float getTimeEnd()			const	{ return mTimeEnd; }
-	float getDuration()			const	{ return mDuration; }
+	double getTimeBegin()		const	{ return mTimeBegin; }
+	double getTimeEnd()			const	{ return mTimeEnd; }
+	double getDuration()		const	{ return mDuration; }
+	//! \note if getCopyValueOnBegin() is true then the begin value may not be known until the Event begins to be processed.
 	float getValueBegin()		const	{ return mValueBegin; }
 	float getValueEnd()			const	{ return mValueEnd; }
 	const RampFn& getRampFn()	const	{ return mRampFn; }
+	//! Returns whether the Param's current value will be copied when this Event begins or not.
+	bool getCopyValueOnBegin()  const	{ return mCopyValueOnBegin; }
+	//! Sets the value that will be used when this Event begins.
+	void setValueBegin( float value )	{ mValueBegin = value; mCopyValueOnBegin = false; }
 
 	void cancel()				{ mIsCanceled = true; }
 	bool isComplete() const		{ return mIsComplete; }
 
-  private:
-	Event( float timeBegin, float timeEnd, float valueBegin, float valueEnd, const RampFn &rampFn );
+	//! Returns the label that was assigned when the Event was created, or an empty string. Useful when debugging.
+	const std::string&	getLabel() const	{ return mLabel; }
 
-	float				mTimeBegin, mTimeEnd, mDuration;
+  private:
+	Event( double timeBegin, double timeEnd, float valueBegin, float valueEnd, bool copyValueOnBegin, const RampFn &rampFn );
+
+	double				mTimeBegin, mTimeEnd, mTimeCancel, mDuration;
 	float				mValueBegin, mValueEnd;
 	std::atomic<bool>	mIsComplete, mIsCanceled;
-	RampFn	mRampFn;
+	bool				mCopyValueOnBegin;
+	std::string			mLabel;
+	RampFn				mRampFn;
 
 	friend class Param;
 };
 
-//! \brief Allows an audio parameter to be controlled over time with sample accuracate curves.
+//! \brief Allows an audio parameter to be controlled over time with sample accurate curves.
 
 //! The Param class enables expressive control over variables that control audio::Node's with a Timeline-esque API.
 //! It supports appending 'ramps' (audio animations) and maintains these in an internal timeline that is evaluated from the audio thread.
@@ -78,26 +89,39 @@ class Event {
 //!
 //! A Param is owned by a parent Node, from which it gains access to the current Context.  This is a necessary step in making it sample
 //! accurate yet still controllable in a thread-safe manager on the user thread.
+//!
+//! \note Ramp Events should not overlap, or you may get discontinuities in the evaluated curve. This could potentially happen when
+//! using multiple appendRamp() calls. Instead, use applyRamp() and set Options::beginTime() accordingly, which will remove any
+//! Events that would otherwise be overlapping.
 class Param {
   public:
 
 	//! Optional parameters when applying or appending ramps. \see applyRamp() \see appendRamp()
 	struct Options {
-		Options() : mDelay( 0 ), mRampFn( rampLinear ) {}
+		Options() : mDelay( 0 ), mBeginTime( -1 ), mRampFn( rampLinear ) {}
 
 		//! Specifies a delay of \a delay in seconds.
-		Options& delay( float delay )				{ mDelay = delay; return *this; }
+		Options& delay( double delay )				{ mDelay = delay; return *this; }
+		//! Specifies the begin time in seconds. If this is value is greater or equal to zero, delay() is ignored.
+		Options& beginTime( double time )			{ mBeginTime = time; return *this; }
 		//! Specifies the ramping function used during evaluation.
 		Options& rampFn( const RampFn &rampFn )		{ mRampFn = rampFn; return *this; }
+		//! Sets a label that will be assigned to the Event. Useful when debugging.
+		Options& label( const std::string &label )	{ mLabel = label; return *this; }
 
 		//! Returns the delay specified in seconds.
-		float getDelay() const				{ return mDelay; }
+		double				getDelay() const		{ return mDelay; }
+		//! Returns the begin time specified in seconds.
+		double				getBeginTime() const	{ return mBeginTime; }
 		//! Returns the ramping function that will be used during evaluation.
-		const RampFn&	getRampFn() const	{ return mRampFn; }
+		const RampFn&		getRampFn() const		{ return mRampFn; }
+		//! Returns a label that will be assigned to the Event. Useful when debugging.
+		const std::string&	getLabel() const		{ return mLabel; }
 
 	  private:
-		float mDelay;
+		double	mDelay, mBeginTime;
 		RampFn	mRampFn;
+		std::string	mLabel;
 	};
 
 	//! Constructs a Param with a pointer (weak reference) to the owning parent Node and an optional \a initialValue (default = 0).
@@ -109,18 +133,23 @@ class Param {
 	float	getValue() const	{ return mValue; }
 	//! Returns a pointer to the buffer used when evaluating a Param that is varying over the current processing block, of equal size to the owning Context's frames per block.
 	//! \note If not varying (eval() returns false), the returned pointer will be invalid.
-	const float*	getValueArray() const;
 
-	//! Replaces any existing Event's with a Event from the current value to \a valueEnd over \a rampSeconds, according to \a options. Any existing processing Node is disconnected.
-	EventRef applyRamp( float valueEnd, float rampSeconds, const Options &options = Options() );
-	//! Replaces any existing Event's with a Event from \a valueBegin to \a valueEnd over \a rampSeconds, according to \a options. Any existing processing Node is disconnected.
-	EventRef applyRamp( float valueBegin, float valueEnd, float rampSeconds, const Options &options = Options() );
-	//! Appends a Event from the end of the last scheduled Param (or the current time) to \a valueEnd over \a rampSeconds, according to \a options. Any existing processing Node is disconnected.
-	EventRef appendRamp( float valueEnd, float rampSeconds, const Options &options = Options() );
+	//! Returns an array of values, time varying if `Event`s were processed, or filled with the a constant value if there were no `Event`s this block. \note Must call eval() once per block before using this method.
+	const float*	getValueArray();
 
-	//! Sets this Param's input to be the processing performed by \a node. Any existing Event's are discarded.
-	//! \note Forces \a node to be mono.
-	void setProcessor( const NodeRef &node );
+	//! Apply a ramp Event from the current value to \a valueEnd over \a rampSeconds, replacing any existing Events when this one begins. Any existing processing Node is disconnected. \see Options.
+	EventRef applyRamp( float valueEnd, double rampSeconds, const Options &options = Options() );
+	//! Apply a ramp Event from t\a valueBegin to \a valueEnd over \a rampSeconds, replacing any existing Events when this one begins. Any existing processing Node is disconnected. \see Options.
+	EventRef applyRamp( float valueBegin, float valueEnd, double rampSeconds, const Options &options = Options() );
+	//! Appends a ramp Event onto the end of the last scheduled Event (or the current time) to \a valueEnd over \a rampSeconds, according to \a options. Any existing processing Node is disconnected.
+	EventRef appendRamp( float valueEnd, double rampSeconds, const Options &options = Options() );
+	//! Appends an ramp Event onto the end of the last scheduled Event (or the current time), from \a valueBegin to \a valueEnd over \a rampSeconds, according to \a options. Any existing processing Node is disconnected.
+	EventRef appendRamp( float valueBegin, float valueEnd, double rampSeconds, const Options &options = Options() );
+
+	//! Sets this Param's input to be the processing performed by \a node. Any existing Event's are discarded. \note Forces \a node to be mono.
+	void	setProcessor( const NodeRef &node );
+	//! Returns this Param's processing Node, or an empty NodeRef if none is set.
+	NodeRef	getProcessor() const	{ return mProcessor; }
 
 	//! Resets Param, blowing away any Event's or processing Node. \note Must be called from a non-audio thread.
 	void reset();
@@ -134,22 +163,24 @@ class Param {
 	//! Evaluates the Param from \a timeBegin for \a arrayLength samples at \a sampleRate.
 	//! \return true if the Param is varying this block (there are Event's or a processing Node) and getValueArray() should be used, or false if the Param's value is constant for this block (use getValue()).
 	//! \note Safe to call on the audio thread.
-	bool	eval( float timeBegin, float *array, size_t arrayLength, size_t sampleRate );
+	bool	eval( double timeBegin, float *array, size_t arrayLength, size_t sampleRate );
 
 	//! Returns the total duration of any scheduled Event's, including delay, or 0 if none are scheduled.
 	float					findDuration() const;
 	//! Returns the end time and value of the latest scheduled Event, or [0, getValue()] if none are scheduled.
-	std::pair<float, float> findEndTimeAndValue() const;
+	std::pair<double, float> findEndTimeAndValue() const;
 
   protected:
 
 	// non-locking protected methods
 	void		initInternalBuffer();
 	void		resetImpl();
+	void		removeEventsAt( double time );
 	ContextRef	getContext() const;
 
 	std::list<EventRef>	mEvents;
 	std::atomic<float>	mValue;
+	bool				mIsVaryingThisBlock;
 	Node*				mParentNode;
 	NodeRef				mProcessor;
 	BufferDynamic		mInternalBuffer;
