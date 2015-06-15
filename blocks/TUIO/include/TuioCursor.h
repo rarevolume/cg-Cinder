@@ -60,6 +60,8 @@ class Cursor : public ProfileBase {
 		float motionAccel =  message.getArgAsFloat( 6 );
 		return Cursor( source, sessionId, pos, speed, motionAccel );
 	}
+    
+    std::string     getSource() const { return mSource; }
 
   protected:
 	vec2		mPos, mPrevPos;
