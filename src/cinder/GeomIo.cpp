@@ -574,7 +574,7 @@ void Rect::setDefaultTexCoords()
 ///////////////////////////////////////////////////////////////////////////////////////
 // RoundedRect
 RoundedRect::RoundedRect()
-	: mSubdivisions( -1 ), mCornerRadius( 1.0f ), mHasColors( false ), mNumVertices( 0 )
+	: mSubdivisions( -1 ), mCornerRadius( 0.1f ), mHasColors( false ), mNumVertices( 0 )
 {
 	rect( Rectf( -0.5f, -0.5f, 0.5f, 0.5f ) );
 	updateVertexCount();
@@ -2435,9 +2435,12 @@ void Transform::process( SourceModsContext *ctx, const AttribSet &requestedAttri
 	const size_t numVertices = ctx->getNumVertices();
 
 	if( ctx->getAttribDims( POSITION ) == 2 ) {
-		vec2* positions = reinterpret_cast<vec2*>( ctx->getAttribData( POSITION ) );
+		const vec2* inPositions = reinterpret_cast<vec2*>( ctx->getAttribData( POSITION ) );
+		vector<vec3> outPositions;
+		outPositions.reserve( numVertices );
 		for( size_t v = 0; v < numVertices; ++v )
-			positions[v] = vec2( mTransform * vec4( positions[v], 0, 1 ) );
+			outPositions.push_back( vec3( mTransform * vec4( inPositions[v], 0, 1 ) ) );
+		ctx->copyAttrib( POSITION, 3, 0, (const float*)outPositions.data(), numVertices );
 	}
 	else if( ctx->getAttribDims( POSITION ) == 3 ) {
 		vec3* positions = reinterpret_cast<vec3*>( ctx->getAttribData( POSITION ) );
@@ -3384,7 +3387,7 @@ void WireCircle::loadInto( Target *target, const AttribSet &requestedAttribs ) c
 ///////////////////////////////////////////////////////////////////////////////////////
 // WireRoundedRect
 WireRoundedRect::WireRoundedRect()
-	: mCornerSubdivisions( -1 ), mCornerRadius( 1.0f ), mNumVertices( 0 )
+	: mCornerSubdivisions( -1 ), mCornerRadius( 0.1f ), mNumVertices( 0 )
 {
 	rect( Rectf( -0.5f, -0.5f, 0.5f, 0.5f ) );
 	updateVertexCount();
