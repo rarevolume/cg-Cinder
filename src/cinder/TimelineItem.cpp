@@ -115,7 +115,9 @@ void TimelineItem::stepTo( float newTime, bool reverse )
 			complete( true );
 		}
 	}
-	else if( ( ! mLoop ) && ( ! mInfinite ) ) { // newTime >= endTime
+	// CB - I've fixed this bug before
+	//else if( ( ! mLoop ) && ( ! mInfinite ) ) { // newTime >= endTime
+	else if( ( ! mLoop ) && ( ! mInfinite ) && !mPingPong ) { // newTime >= endTime
 		if( ( ! mComplete ) && ( ! reverse ) ) {
 			mComplete = true;
 			mReverseComplete = false;

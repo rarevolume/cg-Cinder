@@ -171,6 +171,7 @@ void AppBase::privateUpdate__()
 
 	mSignalUpdate.emit();
 
+//CI_LOG_I("update()");
 	update();	// call <ourApp>::update()
 
 	// update master timeline - not sure why this is done after update()
