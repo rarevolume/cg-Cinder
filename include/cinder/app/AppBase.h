@@ -331,7 +331,9 @@ class AppBase {
 	virtual void		setFullScreen( bool fullScreen, const FullScreenOptions &options = FullScreenOptions() ) { getWindow()->setFullScreen( fullScreen, options ); }
 
 	//! Returns the number of seconds which have elapsed since application launch
-	double				getElapsedSeconds() const { return mTimer.getSeconds(); }
+	//double				getElapsedSeconds() const { return mTimer.getSeconds(); }
+// CB
+double				getElapsedSeconds() const { return mFrameCount / 60.0; }
 	//! Returns the number of animation frames which have elapsed since application launch
 	uint32_t			getElapsedFrames() const { return mFrameCount; }
 

@@ -173,12 +173,19 @@ void AppBase::privateUpdate__()
 
 //CI_LOG_I("update()");
 	update();	// call <ourApp>::update()
+	
+// CB
+// mTimer is used only here and in getElapsedSeconds()
+//double now = mTimer.getSeconds();
+double now = mFrameCount / 60.0;
 
 	// update master timeline - not sure why this is done after update()
-	mTimeline->stepTo( static_cast<float>( getElapsedSeconds() ) );
+	//mTimeline->stepTo( static_cast<float>( getElapsedSeconds() ) );
+	mTimeline->stepTo( static_cast<float>( now ) );
 
 	// update FPS statistics
-	double now = mTimer.getSeconds();
+	// mFpsSampleInterval == 1 by default
+	//double now = mTimer.getSeconds();
 	if( now > mFpsLastSampleTime + mFpsSampleInterval ) {
 		//calculate average Fps over sample interval
 		uint32_t framesPassed = mFrameCount - mFpsLastSampleFrame;
