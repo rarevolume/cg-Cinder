@@ -127,9 +127,9 @@ class MovieBase {
 	//! Sets whether the movie is set to loop during playback. If \a palindrome is true, the movie will "ping-pong" back and forth
 	void		setLoop( bool loop = true, bool palindrome = false );
 	//! Advances the movie by one frame (a single video sample). Ignores looping settings.
-	bool		stepForward();
+	bool		stepForward( int frms = 1 );
 	//! Steps backward by one frame (a single video sample). Ignores looping settings.
-	bool		stepBackward();
+	bool		stepBackward( int frms = 1 );
 	/** Sets the playback rate, which begins playback immediately for nonzero values.
 	 * 1.0 represents normal speed. Negative values indicate reverse playback and \c 0 stops.
 	 *

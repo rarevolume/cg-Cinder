@@ -367,20 +367,21 @@ void MovieBase::setLoop( bool loop, bool palindrome )
 	mPalindrome = (loop? palindrome: false);
 }
 
-bool MovieBase::stepForward()
+bool MovieBase::stepForward( int frms /* = 1 */ )
 {
 	if( ! mPlayerItem )
 		return false;
 	
 	bool can_step_forwards = [mPlayerItem canStepForward];
 	if( can_step_forwards ) {
-		[mPlayerItem stepByCount:1];
+		//[mPlayerItem stepByCount:1];
+		[mPlayerItem stepByCount:frms];
 	}
 	
 	return can_step_forwards;
 }
 
-bool MovieBase::stepBackward()
+bool MovieBase::stepBackward( int frms /* = 1 */ )
 {
 	if( ! mPlayerItem)
 		return false;
@@ -388,7 +389,8 @@ bool MovieBase::stepBackward()
 	bool can_step_backwards = [mPlayerItem canStepBackward];
 	
 	if (can_step_backwards) {
-		[mPlayerItem stepByCount:-1];
+		//[mPlayerItem stepByCount:-1];
+		[mPlayerItem stepByCount:-frms];
 	}
 	
 	return can_step_backwards;
