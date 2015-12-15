@@ -176,8 +176,10 @@ void AppBase::privateUpdate__()
 	
 // CB
 // mTimer is used only here and in getElapsedSeconds()
+// mFrameRate defaults to 60.0f, used in startAnimationTimer() to create a timer which fires at the frame rate
 //double now = mTimer.getSeconds();
-double now = mFrameCount / 60.0;
+//double now = mFrameCount / 60.0;
+double now = mFrameCount / getFrameRate();
 
 	// update master timeline - not sure why this is done after update()
 	//mTimeline->stepTo( static_cast<float>( getElapsedSeconds() ) );

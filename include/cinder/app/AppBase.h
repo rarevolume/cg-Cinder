@@ -333,7 +333,8 @@ class AppBase {
 	//! Returns the number of seconds which have elapsed since application launch
 	//double				getElapsedSeconds() const { return mTimer.getSeconds(); }
 // CB
-double				getElapsedSeconds() const { return mFrameCount / 60.0; }
+//double				getElapsedSeconds() const { return mFrameCount / 60.0; }
+double				getElapsedSeconds() const { return mFrameCount / getFrameRate(); }
 	//! Returns the number of animation frames which have elapsed since application launch
 	uint32_t			getElapsedFrames() const { return mFrameCount; }
 
