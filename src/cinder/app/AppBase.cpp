@@ -155,6 +155,7 @@ void AppBase::privateSetup__()
 	setup();
 }
 
+// CB - this is the central update() call in the application
 void AppBase::privateUpdate__()
 {
 	mFrameCount++;
@@ -170,10 +171,12 @@ void AppBase::privateUpdate__()
 
 	mSignalUpdate.emit();
 
-	update();
+	update();	// call <ourApp>::update()
 
+	// update master timeline - not sure why this is done after update()
 	mTimeline->stepTo( static_cast<float>( getElapsedSeconds() ) );
 
+	// update FPS statistics
 	double now = mTimer.getSeconds();
 	if( now > mFpsLastSampleTime + mFpsSampleInterval ) {
 		//calculate average Fps over sample interval
