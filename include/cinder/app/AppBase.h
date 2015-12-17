@@ -332,6 +332,7 @@ class AppBase {
 
 	//! Returns the number of seconds which have elapsed since application launch
 	//double				getElapsedSeconds() const { return mTimer.getSeconds(); }
+	double				getTrueElapsedSeconds() const { return mTimer.getSeconds(); }
 	double				getElapsedSeconds() const {
 		return mDoPlaybackForCapture ? mFrameCount / getFrameRate() : mTimer.getSeconds();
 	}
