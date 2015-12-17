@@ -92,7 +92,7 @@ void AppBase::Settings::setShouldQuit( bool shouldQuit )
 
 AppBase::AppBase()
 	: mFrameCount( 0 ), mAverageFps( 0 ), mFpsSampleInterval( 1 ), mTimer( true ), mTimeline( Timeline::create() ),
-		mFpsLastSampleFrame( 0 ), mFpsLastSampleTime( 0 )
+		mFpsLastSampleFrame( 0 ), mFpsLastSampleTime( 0 ), mDoPlaybackForCapture( false )
 {
 	sInstance = this;
 
@@ -171,28 +171,22 @@ void AppBase::privateUpdate__()
 
 	mSignalUpdate.emit();
 
-//CI_LOG_I("update()");
+	//CI_LOG_I("update()");
 	update();	// call <ourApp>::update()
 	
-// CB
-// mTimer is used only here and in getElapsedSeconds()
-// mFrameRate defaults to 60.0f, used in startAnimationTimer() to create a timer which fires at the frame rate
-//double now = mTimer.getSeconds();
-//double now = mFrameCount / 60.0;
-double now = mFrameCount / getFrameRate();
+	// mTimer is used only here and in getElapsedSeconds()
+	// mFrameRate defaults to 60.0f, used in startAnimationTimer() to create a timer which fires at the frame rate
+	double now = getElapsedSeconds();
 
 	// update master timeline - not sure why this is done after update()
-	//mTimeline->stepTo( static_cast<float>( getElapsedSeconds() ) );
 	mTimeline->stepTo( static_cast<float>( now ) );
 
 	// update FPS statistics
 	// mFpsSampleInterval == 1 by default
-	//double now = mTimer.getSeconds();
 	if( now > mFpsLastSampleTime + mFpsSampleInterval ) {
 		//calculate average Fps over sample interval
 		uint32_t framesPassed = mFrameCount - mFpsLastSampleFrame;
 		mAverageFps = (float)(framesPassed / (now - mFpsLastSampleTime));
-
 		mFpsLastSampleTime = now;
 		mFpsLastSampleFrame = mFrameCount;
 	}
