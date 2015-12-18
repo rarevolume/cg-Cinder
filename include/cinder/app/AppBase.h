@@ -334,7 +334,7 @@ class AppBase {
 	//double				getElapsedSeconds() const { return mTimer.getSeconds(); }
 	double				getTrueElapsedSeconds() const { return mTimer.getSeconds(); }
 	double				getElapsedSeconds() const {
-		return mDoPlaybackForCapture ? mFrameCount / getFrameRate() : mTimer.getSeconds();
+		return mDoPlaybackForCapture ? mFrameCount / mCaptureFrameRate : mTimer.getSeconds();
 	}
 	//! Returns the number of animation frames which have elapsed since application launch
 	uint32_t			getElapsedFrames() const { return mFrameCount; }
@@ -344,6 +344,8 @@ class AppBase {
 		mFpsLastSampleTime = getElapsedSeconds();
 		mFpsLastSampleFrame = mFrameCount;
 	}
+	float getCaptureFrameRate() const { return mCaptureFrameRate; }
+	void  setCaptureFrameRate( float frameRate ) { mCaptureFrameRate = frameRate; }
 
 	//! Returns whether the app is registered to receive multiTouch events from the operating system, configurable via Settings at startup. Disabled by default on desktop platforms, enabled on mobile.
 	bool				isMultiTouchEnabled() const				{ return mMultiTouchEnabled; }
@@ -450,6 +452,7 @@ class AppBase {
 	RendererRef				mDefaultRenderer;
 	
 	bool					mDoPlaybackForCapture;
+	float					mCaptureFrameRate;
 
 	std::vector<std::string>	mCommandLineArgs;
 	std::shared_ptr<Timeline>	mTimeline;
