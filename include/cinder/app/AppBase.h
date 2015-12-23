@@ -346,6 +346,10 @@ class AppBase {
 	}
 	float getCaptureFrameRate() const { return mCaptureFrameRate; }
 	void  setCaptureFrameRate( float frameRate ) { mCaptureFrameRate = frameRate; }
+	
+	float getPlaybackFrameRate() const {
+		return mDoPlaybackForCapture ? mCaptureFrameRate : getFrameRate();
+	}
 
 	//! Returns whether the app is registered to receive multiTouch events from the operating system, configurable via Settings at startup. Disabled by default on desktop platforms, enabled on mobile.
 	bool				isMultiTouchEnabled() const				{ return mMultiTouchEnabled; }
