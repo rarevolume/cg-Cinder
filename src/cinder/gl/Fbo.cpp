@@ -359,9 +359,19 @@ void Fbo::attachAttachments()
 	// attach Textures
 	for( auto &textureAttachment : mAttachmentsTexture ) {
 		auto textureTarget = textureAttachment.second->getTarget();
+#if ! defined( CINDER_GL_ES )
+		if( textureTarget == GL_TEXTURE_CUBE_MAP ) {
+			textureTarget = GL_TEXTURE_CUBE_MAP_POSITIVE_X;
+			glFramebufferTexture2D( GL_FRAMEBUFFER, textureAttachment.first, textureTarget, textureAttachment.second->getId(), 0 );
+		}
+		else {
+			glFramebufferTexture( GL_FRAMEBUFFER, textureAttachment.first, textureAttachment.second->getId(), 0 );
+		}
+#else
 		if( textureTarget == GL_TEXTURE_CUBE_MAP )
 			textureTarget = GL_TEXTURE_CUBE_MAP_POSITIVE_X;
 		glFramebufferTexture2D( GL_FRAMEBUFFER, textureAttachment.first, textureTarget, textureAttachment.second->getId(), 0 );
+#endif
 	}	
 }
 
@@ -656,6 +666,9 @@ bool Fbo::checkStatus( FboExceptionInvalidSpecification *resultExc )
 		case GL_FRAMEBUFFER_INCOMPLETE_MULTISAMPLE:
 			*resultExc = FboExceptionInvalidSpecification( "Framebuffer incomplete: incomplete multisample" );
 		break;
+		case GL_FRAMEBUFFER_INCOMPLETE_LAYER_TARGETS:
+			*resultExc = FboExceptionInvalidSpecification( "Framebuffer incomplete: not all attached images are layered" );
+		return false;
 #else
 		case GL_FRAMEBUFFER_INCOMPLETE_DIMENSIONS:
 			*resultExc = FboExceptionInvalidSpecification( "Framebuffer incomplete: not all attached images have the same number of samples" );
@@ -754,10 +767,10 @@ Surface8u Fbo::readPixels8u( const Area &area, GLenum attachment ) const
 }
 
 #if ! defined( CINDER_GL_ES )
-void Fbo::blitTo( Fbo dst, const Area &srcArea, const Area &dstArea, GLenum filter, GLbitfield mask ) const
+void Fbo::blitTo( const FboRef &dst, const Area &srcArea, const Area &dstArea, GLenum filter, GLbitfield mask ) const
 {
 	ScopedFramebuffer readScp( GL_READ_FRAMEBUFFER, mId );
-	ScopedFramebuffer drawScp( GL_DRAW_FRAMEBUFFER, dst.getId() );
+	ScopedFramebuffer drawScp( GL_DRAW_FRAMEBUFFER, dst->getId() );
 
 	glBlitFramebuffer( srcArea.getX1(), srcArea.getY1(), srcArea.getX2(), srcArea.getY2(), dstArea.getX1(), dstArea.getY1(), dstArea.getX2(), dstArea.getY2(), mask, filter );
 }

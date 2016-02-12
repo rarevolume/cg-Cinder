@@ -24,8 +24,8 @@
 #include "cinder/audio/cocoa/ContextAudioUnit.h"
 #include "cinder/audio/cocoa/CinderCoreAudio.h"
 #include "cinder/CinderAssert.h"
-
 #include "cinder/Utilities.h"
+#include "cinder/Log.h"
 
 #if defined( CINDER_MAC )
 	#include "cinder/audio/cocoa/DeviceManagerCoreAudio.h"
@@ -140,16 +140,16 @@ OSStatus OutputDeviceNodeAudioUnit::renderCallback( void *data, ::AudioUnitRende
 		return noErr;
 	}
 
-	OutputDeviceNodeAudioUnit *lineOut = static_cast<OutputDeviceNodeAudioUnit *>( renderData->node );
-	Buffer *internalBuffer = lineOut->getInternalBuffer();
+	OutputDeviceNodeAudioUnit *outputDeviceNode = static_cast<OutputDeviceNodeAudioUnit *>( renderData->node );
+	Buffer *internalBuffer = outputDeviceNode->getInternalBuffer();
 	internalBuffer->zero();
 
 	renderData->context->setCurrentTimeStamp( timeStamp );
 	ctx->preProcess();
-	lineOut->pullInputs( internalBuffer );
+	outputDeviceNode->pullInputs( internalBuffer );
 
 	// if clip detection is enabled and buffer clipped, silence it
-	if( lineOut->checkNotClipping() )
+	if( outputDeviceNode->checkNotClipping() )
 		zeroBufferList( bufferList );
 	else
 		copyToBufferList( bufferList, internalBuffer );
@@ -179,12 +179,12 @@ void InputDeviceNodeAudioUnit::initialize()
 	auto device = getDevice();
 
 	// see if synchronous I/O is possible by looking at the OutputDeviceNode
-	auto lineOutAu = dynamic_pointer_cast<OutputDeviceNodeAudioUnit>( getContext()->getOutput() );
-	CI_ASSERT( lineOutAu );
+	auto outputDeviceNodeAu = dynamic_pointer_cast<OutputDeviceNodeAudioUnit>( getContext()->getOutput() );
+	CI_ASSERT( outputDeviceNodeAu );
 
-	if( device == lineOutAu->getDevice() && getNumChannels() == lineOutAu->getNumChannels() ) {
+	if( device == outputDeviceNodeAu->getDevice() && getNumChannels() == outputDeviceNodeAu->getNumChannels() ) {
 		mSynchronousIO = true;
-		mAudioUnit = lineOutAu->getAudioUnit();
+		mAudioUnit = outputDeviceNodeAu->getAudioUnit();
 		mOwnsAudioUnit = false;
 	}
 	else {
@@ -195,35 +195,66 @@ void InputDeviceNodeAudioUnit::initialize()
 		mOwnsAudioUnit = true;
 	}
 
-	size_t framesPerBlock = lineOutAu->getOutputFramesPerBlock();
-	size_t sampleRate = lineOutAu->getOutputSampleRate();
+	size_t framesPerBlock = outputDeviceNodeAu->getOutputFramesPerBlock();
+	size_t sampleRate = outputDeviceNodeAu->getOutputSampleRate();
 	::AudioStreamBasicDescription asbd = createFloatAsbd( sampleRate, getNumChannels() );
 
 	if( mSynchronousIO ) {
 		// OutputDeviceNodeAudioUnit is expected to initialize the AudioUnit, since it is pulling to here. But make sure input is enabled.
 		// TODO: this path can surely be optimized to not require line out being initialized twice
-		lineOutAu->mSynchronousIO = true;
-		bool lineOutWasInitialized = lineOutAu->isInitialized();
-		bool lineOutWasEnabled = lineOutAu->isEnabled();
-		if( lineOutWasInitialized ) {
-			lineOutAu->disable();
-			lineOutAu->uninitialize();
+		outputDeviceNodeAu->mSynchronousIO = true;
+		bool outputWasInitialized = outputDeviceNodeAu->isInitialized();
+		bool outputWasEnabled = outputDeviceNodeAu->isEnabled();
+		if( outputWasInitialized ) {
+			outputDeviceNodeAu->disable();
+			outputDeviceNodeAu->uninitialize();
 		}
 
 		mBufferList = createNonInterleavedBufferList( framesPerBlock, getNumChannels() );
 
-		if( lineOutWasInitialized )
-			lineOutAu->initialize();
+		if( outputWasInitialized )
+			outputDeviceNodeAu->initialize();
 
-		if( lineOutWasEnabled )
-			lineOutAu->enable();
+		if( outputWasEnabled )
+			outputDeviceNodeAu->enable();
 	}
 	else {
-		if( device->getSampleRate() != sampleRate || device->getFramesPerBlock() != framesPerBlock )
-			device->updateFormat( Device::Format().sampleRate( sampleRate ).framesPerBlock( framesPerBlock ) );
+		auto deviceFormat = Device::Format();
+		bool deviceFormatNeedsUpdate = false;
 
-		mRingBuffer.resize( framesPerBlock * getNumChannels() * mRingBufferPaddingFactor );
-		mBufferList = createNonInterleavedBufferList( framesPerBlock, getNumChannels() );
+		if( device->getSampleRate() != sampleRate ) {
+				deviceFormatNeedsUpdate = true;
+				deviceFormat.sampleRate( sampleRate );
+		}
+		if( device->getFramesPerBlock() != framesPerBlock ) {
+			deviceFormatNeedsUpdate = true;
+			deviceFormat.framesPerBlock( framesPerBlock );
+		}
+		if( deviceFormatNeedsUpdate ) {
+			device->updateFormat( deviceFormat );
+			// check if we were able to update the samplerate, if we weren't then use a Converter
+			if( device->getSampleRate() != sampleRate ) {
+				mConverter = audio::dsp::Converter::create( device->getSampleRate(), sampleRate, getNumChannels(), getNumChannels(), framesPerBlock );
+				mReadBuffer.setSize( framesPerBlock, getNumChannels() );
+				mConvertedReadBuffer.setSize( mConverter->getDestMaxFramesPerBlock(), getNumChannels() );
+				mRingBuffer.resize( mConverter->getDestMaxFramesPerBlock() * getNumChannels() * mRingBufferPaddingFactor );
+
+				asbd = createFloatAsbd( device->getSampleRate(), getNumChannels() );
+
+				// the AudioBufferList just points at the ReadBuffer to avoid an extra copy
+				mBufferList = createNonInterleavedBufferListShallow( getNumChannels() );
+				for( size_t ch = 0; ch < getNumChannels(); ch++ ) {
+					::AudioBuffer *buffer = &mBufferList->mBuffers[ch];
+					buffer->mNumberChannels = 1;
+					buffer->mDataByteSize = static_cast<UInt32>( mReadBuffer.getNumFrames() * sizeof( float ) );
+					buffer->mData = mReadBuffer.getChannel( ch );
+				}
+			}
+		}
+		else {
+			mBufferList = createNonInterleavedBufferList( framesPerBlock, getNumChannels() );
+			mRingBuffer.resize( framesPerBlock * getNumChannels() * mRingBufferPaddingFactor );
+		}
 
 		::AURenderCallbackStruct callbackStruct = { InputDeviceNodeAudioUnit::inputCallback, &mRenderData };
 		setAudioUnitProperty( mAudioUnit, kAudioOutputUnitProperty_SetInputCallback, callbackStruct, kAudioUnitScope_Global, DeviceBus::INPUT );
@@ -293,25 +324,37 @@ void InputDeviceNodeAudioUnit::process( Buffer *buffer )
 OSStatus InputDeviceNodeAudioUnit::inputCallback( void *data, ::AudioUnitRenderActionFlags *flags, const ::AudioTimeStamp *timeStamp, UInt32 bus, UInt32 numFrames, ::AudioBufferList *bufferList )
 {
 	RenderData *renderData = static_cast<NodeAudioUnit::RenderData *>( data );
-	InputDeviceNodeAudioUnit *lineIn = static_cast<InputDeviceNodeAudioUnit *>( renderData->node );
+	InputDeviceNodeAudioUnit *inputDeviceNode = static_cast<InputDeviceNodeAudioUnit *>( renderData->node );
 
 	// this method is called async by Core Audio, so first check that our Context hasn't already been destroyed.
-	if( ! lineIn->getContext() )
+	if( ! inputDeviceNode->getContext() )
 		return noErr;
 
-	::AudioBufferList *nodeBufferList = lineIn->mBufferList.get();
-	OSStatus status = ::AudioUnitRender( lineIn->getAudioUnit(), flags, timeStamp, DeviceBus::INPUT, numFrames, nodeBufferList );
+	::AudioBufferList *nodeBufferList = inputDeviceNode->mBufferList.get();
+	OSStatus status = ::AudioUnitRender( inputDeviceNode->getAudioUnit(), flags, timeStamp, DeviceBus::INPUT, numFrames, nodeBufferList );
 	if( status != noErr )
 		return status;
 
-	if( lineIn->mRingBuffer.getAvailableWrite() >= nodeBufferList->mNumberBuffers * numFrames ) {
-		for( size_t ch = 0; ch < nodeBufferList->mNumberBuffers; ch++ ) {
-			float *channel = static_cast<float *>( nodeBufferList->mBuffers[ch].mData );
-			lineIn->mRingBuffer.write( channel, numFrames );
+	const size_t numChannels = nodeBufferList->mNumberBuffers;
+
+	if( inputDeviceNode->mConverter ) {
+		// nodeBufferList's buffers point to the channels of mReadBuffer
+		pair<size_t, size_t> count = inputDeviceNode->mConverter->convert( &inputDeviceNode->mReadBuffer, &inputDeviceNode->mConvertedReadBuffer );
+		for( size_t ch = 0; ch < numChannels; ch++ ) {
+			if( ! inputDeviceNode->mRingBuffer.write( inputDeviceNode->mConvertedReadBuffer.getChannel( ch ), count.second ) )
+				inputDeviceNode->markOverrun();
 		}
 	}
-	else
-		lineIn->markOverrun();
+	else {
+		if( inputDeviceNode->mRingBuffer.getAvailableWrite() >= nodeBufferList->mNumberBuffers * numFrames ) {
+			for( size_t ch = 0; ch < numChannels; ch++ ) {
+				float *channel = static_cast<float *>( nodeBufferList->mBuffers[ch].mData );
+				inputDeviceNode->mRingBuffer.write( channel, numFrames );
+			}
+		}
+		else
+			inputDeviceNode->markOverrun();
+	}
 
 	return noErr;
 }

@@ -53,6 +53,8 @@ class PostProcessingAAApp : public App {
 	enum SMAAMode { SMAA_EDGE_DETECTION, SMAA_BLEND_WEIGHTS, SMAA_BLEND_NEIGHBORS };
 	enum DividerMode { MODE_COMPARISON, MODE_ORIGINAL1, MODE_FXAA, MODE_SMAA, MODE_ORIGINAL2, MODE_COUNT };
   public:
+	static void prepare( Settings *settings );
+	
 	void setup() override;
 	void update() override;
 	void draw() override;
@@ -94,6 +96,12 @@ private:
 	vec2                mMouse;          // Keep track of the mouse cursor.
 };
 
+void PostProcessingAAApp::prepare( App::Settings *settings )
+{
+	settings->disableFrameRate();
+	settings->setWindowSize( 1280, 720 );
+}
+
 void PostProcessingAAApp::setup()
 {
 	try {
@@ -102,7 +110,7 @@ void PostProcessingAAApp::setup()
 		mInfoOriginal = gl::Texture::create( loadImage( loadAsset( "original.png" ) ) );
 	}
 	catch( const std::exception& e ) {
-		CI_LOG_E( "Failed to load textures: " << e.what() );
+		CI_LOG_EXCEPTION( "Failed to load textures.", e );
 		quit();
 	}
 
@@ -119,6 +127,12 @@ void PostProcessingAAApp::setup()
 
 	mFrameTime = getElapsedSeconds();
 	mFrameRate = 0.0;
+
+	// Disable vertical sync, so we can evaluate the frame rate.
+	gl::enableVerticalSync( false );
+
+	// Disable alpha blending (which is enabled by default) for SMAA to work correctly.
+	gl::disableAlphaBlending();
 }
 
 void PostProcessingAAApp::update()
@@ -364,10 +378,4 @@ void PostProcessingAAApp::keyDown( KeyEvent event )
 	}
 }
 
-void prepareSettings( App::Settings *settings )
-{
-	settings->disableFrameRate();
-	settings->setWindowSize( 1280, 720 );
-}
-
-CINDER_APP( PostProcessingAAApp, RendererGl( RendererGl::Options().msaa( 0 ) ), prepareSettings )
+CINDER_APP( PostProcessingAAApp, RendererGl, &PostProcessingAAApp::prepare )

@@ -302,11 +302,12 @@ WindowImplMsw::WindowImplMsw( const Window::Format &format, RendererRef sharedRe
 	mWindowedSize = format.getSize();
 	mWindowWidth = mWindowedSize.x;
 	mWindowHeight = mWindowedSize.y;
-	if( format.isPosSpecified() )
-		mWindowOffset = mWindowedPos = format.getPos();
+	if( format.isPosSpecified() ) {
+		mWindowOffset = mWindowedPos = mDisplay->getBounds().getUL() + format.getPos();
+	}
 	else {
 		ivec2 displaySize = mDisplay->getSize();
-		mWindowOffset = mWindowedPos = ( displaySize - mWindowedSize ) / 2;
+		mWindowOffset = mWindowedPos = mDisplay->getBounds().getUL() + ( displaySize - mWindowedSize ) / 2;
 	}
 
 	createWindow( ivec2( mWindowWidth, mWindowHeight ), format.getTitle(), mDisplay, sharedRenderer );
@@ -345,7 +346,7 @@ void WindowImplMsw::setWindowStyleValues()
 		mWindowStyle = WS_POPUP;
 	}
 	else {
-		mWindowExStyle = WS_EX_APPWINDOW | WS_EX_WINDOWEDGE;			// Window Extended Style
+		mWindowExStyle = WS_EX_APPWINDOW | WS_EX_WINDOWEDGE | WS_EX_ACCEPTFILES;				// Window Extended Style
 		mWindowStyle = ( mResizable ) ? WS_OVERLAPPEDWINDOW
 			:	( WS_OVERLAPPEDWINDOW & ~WS_THICKFRAME & ~WS_MINIMIZEBOX & ~WS_MAXIMIZEBOX );	// Windows Style
 	}
@@ -727,7 +728,7 @@ void WindowImplMsw::setBorderless( bool borderless )
 			mWindowStyle = WS_POPUP;
 		}
 		else {
-			mWindowExStyle = WS_EX_APPWINDOW | WS_EX_WINDOWEDGE;			// Window Extended Style
+			mWindowExStyle = WS_EX_APPWINDOW | WS_EX_WINDOWEDGE | WS_EX_ACCEPTFILES;	// Window Extended Style
 			mWindowStyle = ( mResizable ) ? WS_OVERLAPPEDWINDOW
 				:	( WS_OVERLAPPEDWINDOW & ~WS_THICKFRAME );							// Windows Style
 		}

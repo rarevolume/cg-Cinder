@@ -422,10 +422,10 @@ NSScreen* DisplayMac::getNsScreen() const
 
 DisplayRef app::PlatformCocoa::findFromCgDirectDisplayId( CGDirectDisplayID displayId )
 {
-	for( vector<DisplayRef>::iterator dispIt = mDisplays.begin(); dispIt != mDisplays.end(); ++dispIt ) {
-		const DisplayMac& macDisplay( dynamic_cast<const DisplayMac&>( **dispIt ) );
-		if( macDisplay.getCgDirectDisplayId() == displayId )
-			return *dispIt;
+	for( auto &display : getDisplays() ) {
+		const DisplayMac* macDisplay( dynamic_cast<const DisplayMac*>( display.get() ) );
+		if( macDisplay->getCgDirectDisplayId() == displayId )
+			return display;
 	}
 
 	// couldn't find it, so return nullptr
@@ -525,7 +525,6 @@ const std::vector<DisplayRef>& app::PlatformCocoa::getDisplays()
 		size_t screenCount = [screens count];
 		for( size_t i = 0; i < screenCount; ++i ) {
 			::NSScreen *screen = [screens objectAtIndex:i];
-			[screen retain]; // this is released in the destructor for Display
 
 			DisplayMac *newDisplay = new DisplayMac();
 
@@ -555,7 +554,7 @@ const std::vector<DisplayRef>& app::PlatformCocoa::getDisplays()
 
 DisplayRef app::PlatformCocoa::findDisplayFromUiScreen( UIScreen *uiScreen )
 {
-	for( auto &display : mDisplays ) {
+	for( auto &display : getDisplays() ) {
 		const DisplayCocoaTouch* cocoaTouchDisplay( dynamic_cast<const DisplayCocoaTouch*>( display.get() ) );
 		if( cocoaTouchDisplay->getUiScreen() == uiScreen )
 			return display;
